@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Environment variables (VERY IMPORTANT)
+.env
+
+# IDE (PyCharm)
+.idea/
+
+# Database files
+*.db
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,4 @@
+id,client_name,property_name,property_type,unit_count,building_count,current_pms,property_notes,sign_up_date,service_begin_date,service_end_date,payment_due_date,service_enabled,onboarding_status,created_at,updated_at
+9ae92f76-4b9d-4eb5-a91d-e0e936eb3329,Carmel Partners,Hunters Glen Apartment,Garden Style Multifamily,898,18,yardi,To be decided,,,,,FALSE,in_progress,2026-03-16T21:16:44Z,2026-03-19T19:27:31Z
+3e1f578f-5838-49b1-b899-a0e0e4615594,Garden State Residential,River Oaks Apartments,Garden Style Multifamily,400,,Entrada,To be determined,,,,,TRUE,in_progress,2026-03-17T04:15:52Z,2026-03-17T04:15:52Z
+54956034-1a7f-47e4-a796-373f8e99ef93,Garden State Residential,River Oaks Apartments,Garden Style Multifamily,400,,Entrada,To be determined,,,,,TRUE,in_progress,2026-03-17T04:17:52Z,2026-03-17T04:17:52Z

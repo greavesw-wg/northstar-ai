@@ -1,0 +1,36 @@
+timestamp,event_type,client,property,action,result
+3/16/2026 22:57,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/16/2026 23:01,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/16/2026 23:01,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/16/2026 23:01,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/16/2026 23:01,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 0:05,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 0:05,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 0:05,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 0:05,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 0:05,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 0:17,client_created,Garden State Residential,River Oaks Apartments,create,success
+3/17/2026 0:21,contact_received,W. Gilbert,W. Gilbert,contact_form,received
+3/17/2026 0:21,lead_analyzed,W. Gilbert,W. Gilbert,score=MEDIUM; category=Multifamily Real Estate,Multifamily Real Estate
+3/17/2026 0:21,ai_response_generated,W. Gilbert,W. Gilbert,summary_created,category
+3/17/2026 1:49,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 17:22,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 17:22,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 17:22,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 17:22,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 17:53,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 21:59,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 21:59,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 21:59,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/17/2026 23:45,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+3/17/2026 23:45,service_toggled,Carmel Partners,Hunters Glen Apartment,enabled,success
+3/19/2026 15:27,service_toggled,Carmel Partners,Hunters Glen Apartment,disabled,success
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+,,,,,
+3/25/2026 19:59,maintenance_request_received,W. Gilbert Greaves,N/A,maintenance_request,received
