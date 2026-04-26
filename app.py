@@ -106,10 +106,6 @@ twilio_client = Client(
     os.getenv("TWILIO_AUTH_TOKEN")
 )
 
-print("TWILIO_ACCOUNT_SID:", os.getenv("TWILIO_ACCOUNT_SID"))
-print("TWILIO_AUTH_TOKEN:", "SET" if os.getenv("TWILIO_AUTH_TOKEN") else "MISSING")
-print("TWILIO_MESSAGING_SERVICE_SID:", os.getenv("TWILIO_MESSAGING_SERVICE_SID"))
-
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = Flask(__name__)
@@ -510,17 +506,25 @@ def maintenance_request():
             }
 
             triage = triage_message(request_payload)
+
+            log_triage_event({
+                "request_id": request_id,
+                "tenant": name,
+                "phone": phone,
+                "building": building,
+                "unit": unit,
+                "issue": issue,
+                "triage": triage
+            })
+
             work_order = generate_work_order(
                 request_payload,
                 triage,
                 sequence_number=next_work_order_sequence(),
             )
 
-            log_triage_event(triage, work_order)
-
         except Exception as e:
             print(f"[TRIAGE ERROR] {e}")
-            raise
 
         sms_phone = format_phone(phone)
 
