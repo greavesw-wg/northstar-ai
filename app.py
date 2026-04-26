@@ -305,7 +305,36 @@ Message: {message}
             "category": "General Inquiry",
             "summary": "Lead submitted through the North Star contact form."
         }
+@app.route("/debug/db")
+def debug_db():
+    import os, psycopg2
 
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+    ORDER BY table_name;
+    """)
+    tables = cur.fetchall()
+
+    output = f"TABLES: {tables}\n\n"
+
+    try:
+        cur.execute("SELECT * FROM maintenance_requests ORDER BY id DESC LIMIT 5;")
+        rows = cur.fetchall()
+        output += "ROWS:\n"
+        for r in rows:
+            output += str(r) + "\n"
+    except Exception as e:
+        output += f"ERROR: {e}"
+
+    cur.close()
+    conn.close()
+
+    return f"<pre>{output}</pre>"
 
 @app.route("/sms", methods=["POST"])
 def sms_handler():
