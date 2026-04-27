@@ -429,9 +429,9 @@ def send_tenant_acknowledgement(request_id, phone):
 
         print("=== TWILIO ACK DEBUG ===")
         print("TO:", sms_phone)
-        print("MESSAGING SERVICE SID EXISTS:", bool(os.getenv("TWILIO_MESSAGING_SERVICE_SID")))
-        print("ACCOUNT SID EXISTS:", bool(os.getenv("TWILIO_ACCOUNT_SID")))
-        print("AUTH TOKEN EXISTS:", bool(os.getenv("TWILIO_AUTH_TOKEN")))
+        print("TWILIO_ACCOUNT_SID:", os.getenv("TWILIO_ACCOUNT_SID"))
+        print("TWILIO_AUTH_TOKEN:", os.getenv("TWILIO_AUTH_TOKEN"))
+        print("TWILIO_MESSAGING_SERVICE_SID:", os.getenv("TWILIO_MESSAGING_SERVICE_SID"))
         print("========================")
 
         message = twilio_client.messages.create(
