@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 from openai import OpenAI
+from threading import Thread
 
 from ai_engine.maintenance_triage_engine import (
     triage_message,
@@ -427,13 +428,6 @@ def send_tenant_acknowledgement(request_id, phone):
     try:
         sms_phone = format_phone(phone)
 
-        print("=== TWILIO ACK DEBUG ===")
-        print("TO:", sms_phone)
-        print("TWILIO_ACCOUNT_SID:", os.getenv("TWILIO_ACCOUNT_SID"))
-        print("TWILIO_AUTH_TOKEN:", os.getenv("TWILIO_AUTH_TOKEN"))
-        print("TWILIO_MESSAGING_SERVICE_SID:", os.getenv("TWILIO_MESSAGING_SERVICE_SID"))
-        print("========================")
-
         message = twilio_client.messages.create(
 
             body=(
@@ -443,11 +437,6 @@ def send_tenant_acknowledgement(request_id, phone):
             messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
             to=sms_phone
         )
-
-        print("TWILIO MESSAGE SID:", getattr(message, "sid", None))
-        print("TWILIO MESSAGE STATUS:", getattr(message, "status", None))
-        print("TWILIO ERROR CODE:", getattr(message, "error_code", None))
-        print("TWILIO ERROR MESSAGE:", getattr(message, "error_message", None))
 
         safe_log_work_order_activity(
             request_id,
@@ -477,6 +466,71 @@ def send_tenant_acknowledgement(request_id, phone):
             "sid": None,
             "error": str(e)
         }
+
+def run_post_submission_tasks(request_id, name, phone, building, unit, issue, assigned_type):
+    try:
+        request_payload = {
+            "request_id": request_id,
+            "property_name": "Hunters Glen Apartments",
+            "building": building,
+            "unit_number": unit,
+            "resident_name": name,
+            "resident_phone": phone,
+            "message": issue,
+            "assigned_type": assigned_type,
+        }
+
+        try:
+            triage = triage_message(request_payload)
+
+            work_order = generate_work_order(
+                request_payload,
+                triage,
+                sequence_number=next_work_order_sequence(),
+            )
+
+            safe_log_work_order_activity(
+                request_id,
+                "WORK_ORDER_GENERATED",
+                f"Work order generated for Building {building}, Unit {unit}."
+            )
+
+        except Exception as e:
+            safe_log_work_order_activity(
+                request_id,
+                "TRIAGE_FAILED",
+                f"AI triage/work-order generation failed: {e}"
+            )
+            print(f"[TRIAGE ERROR] {e}")
+
+        ack = send_tenant_acknowledgement(request_id, phone)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            UPDATE maintenance_requests_v2
+            SET acknowledgment_sent = %s,
+                acknowledgment_status = %s,
+                acknowledgment_sid = %s,
+                acknowledgment_error = %s,
+                acknowledgment_sent_at = CASE WHEN %s THEN NOW() ELSE acknowledgment_sent_at END
+            WHERE id = %s
+        """, (
+            ack["sent"],
+            ack["status"],
+            ack["sid"],
+            ack["error"],
+            ack["sent"],
+            request_id
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print(f"[POST SUBMISSION TASK ERROR] {e}")
 
 @app.route("/maintenance-request", methods=["POST"])
 def maintenance_request():
@@ -612,70 +666,11 @@ def maintenance_request():
             f"Work order opened and assigned to {assigned_type}."
         )
 
-
-        # -------------------------------
-        # AI TRIAGE + LOGGING + WORK ORDER
-        # -------------------------------
-
-        try:
-            request_payload = {
-                "request_id": request_id,
-                "property_name": "Hunters Glen Apartments",
-                "building": building,
-                "unit_number": unit,
-                "resident_name": name,
-                "resident_phone": phone,
-                "message": issue,
-                "assigned_type": assigned_type,
-            }
-
-            triage = triage_message(request_payload)
-
-            log_triage_event({
-                "request_id": request_id,
-                "tenant": name,
-                "phone": phone,
-                "building": building,
-                "unit": unit,
-                "issue": issue,
-                "triage": triage
-            })
-
-            work_order = generate_work_order(
-                request_payload,
-                triage,
-                sequence_number=next_work_order_sequence(),
-            )
-
-            safe_log_work_order_activity(
-                request_id,
-                "WORK_ORDER_GENERATED",
-                f"Work order generated for Building {building}, Unit {unit}."
-            )
-
-        except Exception as e:
-            print(f"[TRIAGE ERROR] {e}")
-
-        ack = send_tenant_acknowledgement(request_id, phone)
-
-        cur.execute("""
-            UPDATE maintenance_requests_v2
-            SET acknowledgment_sent = %s,
-                acknowledgment_status = %s,
-                acknowledgment_sid = %s,
-                acknowledgment_error = %s,
-                acknowledgment_sent_at = CASE WHEN %s THEN NOW() ELSE acknowledgment_sent_at END
-            WHERE id = %s
-        """, (
-            ack["sent"],
-            ack["status"],
-            ack["sid"],
-            ack["error"],
-            ack["sent"],
-            request_id
-        ))
-
-        conn.commit()
+        Thread(
+            target=run_post_submission_tasks,
+            args=(request_id, name, phone, building, unit, issue, assigned_type),
+            daemon=True
+        ).start()
 
         cur.close()
         conn.close()
@@ -683,7 +678,6 @@ def maintenance_request():
         return jsonify({
             "success": True,
             "message": "Maintenance request submitted.",
-            "acknowledgment": ack
         }), 200
 
 
