@@ -22,6 +22,19 @@ from ai_engine.maintenance_triage_engine import (
 )
 from pathlib import Path
 
+TICKET_STATUS = [
+    "REQUEST_SUBMITTED",
+    "CATEGORIZED",
+    "ASSIGNED",
+    "WORK_ORDER_CREATED",
+    "VENDOR_NOTIFIED",
+    "SCHEDULED",
+    "IN_PROGRESS",
+    "COMPLETED",
+    "CLOSED",
+    "FAILED"
+]
+
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -423,6 +436,37 @@ def safe_log_work_order_activity(request_id, event_type, message, actor="system"
     except Exception as e:
         print(f"[ACTIVITY LOG ERROR] {event_type}: {e}")
 
+def update_ticket_status(request_id, status, event_type, message, current_step=None):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            UPDATE maintenance_requests_v2
+            SET status = %s,
+                status_updated_at = NOW(),
+                last_event = %s,
+                current_step = %s
+            WHERE id = %s
+        """, (
+            status,
+            event_type,
+            current_step,
+            request_id
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        safe_log_work_order_activity(
+            request_id,
+            event_type,
+            message
+        )
+
+    except Exception as e:
+        print(f"[TICKET STATUS ERROR] request_id={request_id} status={status} event={event_type}: {e}")
 
 def send_tenant_acknowledgement(request_id, phone):
     try:
@@ -654,16 +698,20 @@ def maintenance_request():
         request_id = result[0]
         conn.commit()
 
-        safe_log_work_order_activity(
+        update_ticket_status(
             request_id,
+            "new",
             "REQUEST_SUBMITTED",
-            f"{name} submitted request for Building {building}, Unit {unit}: {issue}"
+            f"{name} submitted request for Building {building}, Unit {unit}: {issue}",
+            "Request Submitted"
         )
 
-        safe_log_work_order_activity(
+        update_ticket_status(
             request_id,
+            "new",
             "WORK_ORDER_CREATED",
-            f"Work order opened and assigned to {assigned_type}."
+            f"Work order opened and assigned to {assigned_type}.",
+            "Work Order Created"
         )
 
         Thread(
