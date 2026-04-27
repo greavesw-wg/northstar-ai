@@ -393,12 +393,6 @@ def sms_fallback():
 
     return "Logged", 200
 
-
-def sms_fallback():
-    ...
-    return "Logged", 200
-
-
 def format_phone(phone: str) -> str:
     digits = re.sub(r"\D", "", phone)
 
@@ -433,7 +427,15 @@ def send_tenant_acknowledgement(request_id, phone):
     try:
         sms_phone = format_phone(phone)
 
+        print("=== TWILIO ACK DEBUG ===")
+        print("TO:", sms_phone)
+        print("MESSAGING SERVICE SID EXISTS:", bool(os.getenv("TWILIO_MESSAGING_SERVICE_SID")))
+        print("ACCOUNT SID EXISTS:", bool(os.getenv("TWILIO_ACCOUNT_SID")))
+        print("AUTH TOKEN EXISTS:", bool(os.getenv("TWILIO_AUTH_TOKEN")))
+        print("========================")
+
         message = twilio_client.messages.create(
+
             body=(
                 "North Star AI: Your maintenance request has been received. "
                 "Updates to your maintenance request will be sent to this number."
@@ -441,6 +443,11 @@ def send_tenant_acknowledgement(request_id, phone):
             messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
             to=sms_phone
         )
+
+        print("TWILIO MESSAGE SID:", getattr(message, "sid", None))
+        print("TWILIO MESSAGE STATUS:", getattr(message, "status", None))
+        print("TWILIO ERROR CODE:", getattr(message, "error_code", None))
+        print("TWILIO ERROR MESSAGE:", getattr(message, "error_message", None))
 
         safe_log_work_order_activity(
             request_id,
@@ -675,8 +682,10 @@ def maintenance_request():
 
         return jsonify({
             "success": True,
-            "message": "Maintenance request submitted."
+            "message": "Maintenance request submitted.",
+            "acknowledgment": ack
         }), 200
+
 
     except Exception as e:
         print("DATABASE ERROR:", repr(e))
