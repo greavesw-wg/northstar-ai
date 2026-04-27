@@ -549,6 +549,14 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
 
         ack = send_tenant_acknowledgement(request_id, phone)
 
+        update_ticket_status(
+            request_id,
+            "new",
+            "TENANT_NOTIFIED",
+            "Tenant acknowledgement sent",
+            "Tenant Notified"
+        )
+
         conn = get_db_connection()
         cur = conn.cursor()
 
