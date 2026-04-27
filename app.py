@@ -54,6 +54,32 @@ def clean_phone(phone):
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
+def log_work_order_activity(request_id, event_type, message, actor="system"):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Ensure table exists (safe for now)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS work_order_activity_log (
+            id SERIAL PRIMARY KEY,
+            request_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            actor TEXT DEFAULT 'system',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    # Insert activity log
+    cur.execute("""
+        INSERT INTO work_order_activity_log
+            (request_id, event_type, message, actor)
+        VALUES (%s, %s, %s, %s);
+    """, (request_id, event_type, message, actor))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def init_db():
     conn = get_db_connection()
@@ -396,6 +422,55 @@ def next_work_order_sequence() -> int:
     with open(work_orders_file, "r", encoding="utf-8") as f:
         return max(sum(1 for _ in f), 1)
 
+def safe_log_work_order_activity(request_id, event_type, message, actor="system"):
+    try:
+        log_work_order_activity(request_id, event_type, message, actor)
+    except Exception as e:
+        print(f"[ACTIVITY LOG ERROR] {event_type}: {e}")
+
+
+def send_tenant_acknowledgement(request_id, phone):
+    try:
+        sms_phone = format_phone(phone)
+
+        message = twilio_client.messages.create(
+            body=(
+                "North Star AI: Your maintenance request has been received. "
+                "Updates to your maintenance request will be sent to this number."
+            ),
+            messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
+            to=sms_phone
+        )
+
+        safe_log_work_order_activity(
+            request_id,
+            "TENANT_NOTIFIED",
+            f"Tenant acknowledgement SMS queued to {sms_phone}. SID={message.sid}"
+        )
+
+        return {
+            "sent": True,
+            "status": str(message.status),
+            "sid": message.sid,
+            "error": None
+        }
+
+    except Exception as e:
+        safe_log_work_order_activity(
+            request_id,
+            "TENANT_NOTIFICATION_FAILED",
+            f"Tenant acknowledgement SMS failed: {e}"
+        )
+
+        print(f"[TWILIO ACK ERROR] {e}")
+
+        return {
+            "sent": False,
+            "status": "failed",
+            "sid": None,
+            "error": str(e)
+        }
+
 @app.route("/maintenance-request", methods=["POST"])
 def maintenance_request():
     data = request.get_json(silent=True) or {}
@@ -490,7 +565,7 @@ def maintenance_request():
         # routing_phone = "XXXXXXXXXX"  # Channel 09 - Community 09
         # routing_phone = "XXXXXXXXXX"  # Channel 10 - Community 10
 
-        cur.execute("""
+        cur.execute(""" 
             SELECT create_maintenance_request_from_intake(
                 %s::text,
                 %s::text,
@@ -517,6 +592,19 @@ def maintenance_request():
 
         request_id = result[0]
         conn.commit()
+
+        safe_log_work_order_activity(
+            request_id,
+            "REQUEST_SUBMITTED",
+            f"{name} submitted request for Building {building}, Unit {unit}: {issue}"
+        )
+
+        safe_log_work_order_activity(
+            request_id,
+            "WORK_ORDER_CREATED",
+            f"Work order opened and assigned to {assigned_type}."
+        )
+
 
         # -------------------------------
         # AI TRIAGE + LOGGING + WORK ORDER
@@ -552,58 +640,35 @@ def maintenance_request():
                 sequence_number=next_work_order_sequence(),
             )
 
+            safe_log_work_order_activity(
+                request_id,
+                "WORK_ORDER_GENERATED",
+                f"Work order generated for Building {building}, Unit {unit}."
+            )
+
         except Exception as e:
             print(f"[TRIAGE ERROR] {e}")
 
-        sms_phone = format_phone(phone)
+        ack = send_tenant_acknowledgement(request_id, phone)
 
-        try:
-            message = twilio_client.messages.create(
-                body="North Star AI: Your maintenance request has been received. Updates to your maintenance request will be sent to this number.",
-                messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
-                to=sms_phone
-            )
+        cur.execute("""
+            UPDATE maintenance_requests_v2
+            SET acknowledgment_sent = %s,
+                acknowledgment_status = %s,
+                acknowledgment_sid = %s,
+                acknowledgment_error = %s,
+                acknowledgment_sent_at = CASE WHEN %s THEN NOW() ELSE acknowledgment_sent_at END
+            WHERE id = %s
+        """, (
+            ack["sent"],
+            ack["status"],
+            ack["sid"],
+            ack["error"],
+            ack["sent"],
+            request_id
+        ))
 
-            print("TWILIO RAW RESPONSE:", message)
-            print("TWILIO SID:", getattr(message, "sid", None))
-            print("TWILIO STATUS:", getattr(message, "status", None))
-
-            cur.execute("""
-                UPDATE maintenance_requests_v2
-                SET acknowledgment_sent = %s,
-                    acknowledgment_status = %s,
-                    acknowledgment_sid = %s,
-                    acknowledgment_error = NULL,
-                    acknowledgment_sent_at = NOW()
-                WHERE id = %s
-            """, (
-                True,
-                str(message.status),  # queued / accepted / sent
-                message.sid,
-                request_id
-            ))
-            conn.commit()
-
-            print(
-                f"SMS queued. SID={message.sid}, status={message.status}, to={sms_phone}"
-            )
-
-        except Exception as sms_error:
-            cur.execute("""
-                UPDATE maintenance_requests_v2
-                SET acknowledgment_sent = %s,
-                    acknowledgment_status = %s,
-                    acknowledgment_error = %s
-                WHERE id = %s
-            """, (
-                False,
-                "failed",
-                str(sms_error),
-                request_id
-            ))
-            conn.commit()
-
-            print(f"SMS ERROR sending to {sms_phone}: {sms_error}")
+        conn.commit()
 
         cur.close()
         conn.close()
