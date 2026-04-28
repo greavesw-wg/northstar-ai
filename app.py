@@ -913,8 +913,6 @@ def list_client_properties():
         "count": len(client_properties),
         "clients": client_properties
     })
-
-
 @app.route("/api/client-properties/<record_id>", methods=["PATCH"])
 def update_client_property(record_id):
     data = request.get_json(silent=True) or {}
@@ -998,6 +996,7 @@ def dashboard():
             mr.unit_label,
             mr.issue_description,
             mr.status,
+            mr.current_step,
             mr.assigned_type,
             mr.submitted_at
         FROM maintenance_requests_v2 mr
@@ -1028,8 +1027,9 @@ def dashboard():
         unit = (r[5] or "").strip()
         issue = r[6]
         status = r[7]
-        assigned_type = (r[8] or "").strip()
-        submitted_at = r[9]
+        current_step = (r[8] or "").strip()
+        assigned_type = (r[9] or "").strip()
+        submitted_at = r[10]
 
         ticket_number = generate_ticket_number(ticket_id, submitted_at)
 
@@ -1047,6 +1047,8 @@ def dashboard():
             "in_progress": "In Progress",
             "complete": "Complete"
         }.get(status, "Unknown")
+
+        current_step_safe = html.escape(current_step or status_label, quote=True)
 
         id_safe = html.escape(str(ticket_id), quote=True)
         ticket_number_safe = html.escape(str(ticket_number), quote=True)
@@ -1091,7 +1093,7 @@ def dashboard():
             <td class="property-cell">{property_display_safe}</td>
             <td class="issue-cell">{issue_safe}</td>
             <td>{assigned_type_safe}</td>
-            <td class="status-cell">{format_status_badge(status_label)}</td>
+            <td class="status-cell">{current_step_safe}</td>
             <td>
                 <button class="delete-btn" onclick="deleteTicket(event, '{id_safe}', '{ticket_number_safe}')">
                     Delete
