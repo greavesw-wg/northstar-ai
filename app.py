@@ -127,9 +127,9 @@ def generate_ticket_number(ticket_id, submitted_at):
     return f"NS-{dt.strftime('%Y%m%d')}-{int(ticket_id):06d}"
 
 
-def format_status_badge(status_label):
-    status = (status_label or "").lower()
-
+def format_status_badge(status_label, current_step=None):
+    display_status = current_step or status_label
+    
     if status == "new":
         cls = "status-new"
     elif status in ["in progress", "in_progress"]:
