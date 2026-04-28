@@ -1031,6 +1031,7 @@ def dashboard():
         issue = r[6]
         status = r[7]
         current_step = (r[8] or "").strip()
+        print("DEBUG:", status, current_step)
         assigned_type = (r[9] or "").strip()
         submitted_at = r[10]
 
