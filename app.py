@@ -1201,7 +1201,7 @@ def dashboard():
         }}
         .ops-table th,
         .ops-table td {{
-            padding: 8px 8px;
+            padding: 8px 4px;
             border-bottom: 1px solid #1f2937;
             text-align: left;
             font-size: 12px;
