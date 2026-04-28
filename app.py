@@ -128,19 +128,20 @@ def generate_ticket_number(ticket_id, submitted_at):
 
 def format_status_badge(status_label, current_step=None):
     display_status = current_step or status_label
+    step = display_status.lower()
 
-    step = (current_step or "").lower()
-
-    if "submitted" in step:
-        cls = "status-new"
-    elif "notified" in step:
-        cls = "status-progress"
-    elif "progress" in step:
-        cls = "status-progress"
-    elif "complete" in step:
-        cls = "status-completed"
+    if "tenant notified" in step:
+        cls = "status-tenant"
+    elif "vendor" in step:
+        cls = "status-vendor"
+    elif "work order" in step:
+        cls = "status-workorder"
+    elif "complete" in step or "closed" in step:
+        cls = "status-complete"
+    elif "failed" in step:
+        cls = "status-failed"
     else:
-        cls = "status-other"
+        cls = "status-new"
 
     return f"<span class='status-badge {cls}'>{display_status}</span>"
 
@@ -1231,12 +1232,50 @@ def dashboard():
         .ops-table td.status-cell {{
             min-width: 100px;
         }}
+        <style>
         .badge {{
             display: inline-block;
             padding: 4px 10px;
             border-radius: 999px;
             font-size: 12px;
             font-weight: 700;
+        }}
+        .status-badge {{
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }}
+        
+        .status-badge.status-new {{
+            background: #1e3a8a;
+            color: #dbeafe;
+        }}
+        
+        .status-badge.status-tenant {{
+            background: #166534;
+            color: #dcfce7;
+        }}
+        
+        .status-badge.status-vendor {{
+            background: #92400e;
+            color: #fef3c7;
+        }}
+        
+        .status-badge.status-workorder {{
+            background: #1d4ed8;
+            color: #dbeafe;
+        }}
+        
+        .status-badge.status-complete {{
+            background: #15803d;
+            color: #dcfce7;
+        }}
+        
+        .status-badge.status-failed {{
+            background: #991b1b;
+            color: #fee2e2;
         }}
         .enabled {{
             background: #052e16;
