@@ -139,7 +139,8 @@ def format_status_badge(status_label):
     else:
         cls = "status-other"
 
-    return f'<span class="status-badge {cls}">{status_label}</span>'
+    display_status = current_step or status_label
+    return f"<span class='status-badge {cls}'>{display_status}</span>"
 
 twilio_client = Client(
     os.getenv("TWILIO_ACCOUNT_SID"),
