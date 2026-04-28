@@ -126,15 +126,18 @@ def generate_ticket_number(ticket_id, submitted_at):
 
     return f"NS-{dt.strftime('%Y%m%d')}-{int(ticket_id):06d}"
 
-
 def format_status_badge(status_label, current_step=None):
     display_status = current_step or status_label
 
-    if status_label == "New":
+    step = (current_step or "").lower()
+
+    if "submitted" in step:
         cls = "status-new"
-    elif status_label == "In Progress":
+    elif "notified" in step:
         cls = "status-progress"
-    elif status_label == "Complete":
+    elif "progress" in step:
+        cls = "status-progress"
+    elif "complete" in step:
         cls = "status-completed"
     else:
         cls = "status-other"
@@ -1093,7 +1096,7 @@ def dashboard():
             <td class="property-cell">{property_display_safe}</td>
             <td class="issue-cell">{issue_safe}</td>
             <td>{assigned_type_safe}</td>
-            <td class="status-cell">{current_step_safe}</td>
+            <td class="status-cell">{format_status_badge(status_label, current_step)}</td>
             <td>
                 <button class="delete-btn" onclick="deleteTicket(event, '{id_safe}', '{ticket_number_safe}')">
                     Delete
