@@ -1227,7 +1227,7 @@ def dashboard():
         }}
         .ops-table td.property-cell {{
             white-space: normal;
-            min-width: 120px;
+            min-width: 140px;
             max-width: 260px;
         }}
         .ops-table td.status-cell {{
