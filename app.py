@@ -129,17 +129,16 @@ def generate_ticket_number(ticket_id, submitted_at):
 
 def format_status_badge(status_label, current_step=None):
     display_status = current_step or status_label
-    
-    if status == "new":
+
+    if status_label == "New":
         cls = "status-new"
-    elif status in ["in progress", "in_progress"]:
-        cls = "status-in-progress"
-    elif status in ["complete", "completed"]:
+    elif status_label == "In Progress":
+        cls = "status-progress"
+    elif status_label == "Complete":
         cls = "status-completed"
     else:
         cls = "status-other"
 
-    display_status = current_step or status_label
     return f"<span class='status-badge {cls}'>{display_status}</span>"
 
 twilio_client = Client(
