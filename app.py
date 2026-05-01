@@ -132,7 +132,7 @@ def format_status_badge(status_label, current_step=None):
 
     if "tenant notified" in step:
         cls = "status-tenant"
-    elif "vendor" in step:
+    elif "vendor assigned" in step:
         cls = "status-vendor"
     elif "work order" in step:
         cls = "status-workorder"
@@ -140,6 +140,8 @@ def format_status_badge(status_label, current_step=None):
         cls = "status-complete"
     elif "failed" in step:
         cls = "status-failed"
+    elif "new" in step:
+        cls = "status-new"
     else:
         cls = "status-new"
 
@@ -594,16 +596,39 @@ def maintenance_request():
 
     name = str(data.get("name", "")).strip()
     phone = clean_phone(data.get("phone", ""))
+    community_access_code = str(data.get("community_access_code", "")).strip().upper()
     building = " ".join(str(data.get("building", "")).split()).strip()
     unit = " ".join(str(data.get("unit", "")).split()).strip()
     issue = str(data.get("issue", "")).strip()
 
-    if not name or not phone or not building or not unit or not issue:
-        return jsonify({"error": "Name, phone, building, unit, and issue are required."}), 400
+    if not name or not phone or not community_access_code or not building or not unit or not issue:
+            return jsonify({"error": "Name, phone, building, unit, and issue are required."}), 400
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                client_name,
+                property_name,
+                property_city,
+                property_state,
+                property_zip,
+                default_routing_phone
+            FROM community_routing
+            WHERE community_access_code = %s
+              AND is_active = TRUE
+        """, (community_access_code,))
+
+        community = cur.fetchone()
+
+        if community is None:
+            return jsonify({
+                "error": "Invalid community access code. Please check the code provided by your property management team."
+            }), 400
+
+        client_name, property_name, property_city, property_state, property_zip, routing_phone = community
 
         # Defer strict matching until client/community templates exist.
         property_id = None
@@ -708,6 +733,13 @@ def maintenance_request():
             raise Exception("Function returned NULL")
 
         request_id = result[0]
+
+        cur.execute("""
+            UPDATE maintenance_requests_v2
+            SET community_access_code = %s
+            WHERE id = %s
+        """, (community_access_code, request_id))
+
         conn.commit()
 
         update_ticket_status(
@@ -1234,49 +1266,34 @@ def dashboard():
             min-width: 100px;
         }}
         <style>
-        .badge {{
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
-        }}
-        .status-badge {{
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
+        /* 🔴 NEW */
+        .status-new {{
+            background: #7f1d1d;
+            color: #fecaca;
         }}
         
-        .status-badge.status-new {{
-            background: #1e3a8a;
-            color: #dbeafe;
-        }}
-        
-        .status-badge.status-tenant {{
-            background: #166534;
-            color: #dcfce7;
-        }}
-        
-        .status-badge.status-vendor {{
+        /* 🟡 VENDOR ASSIGNED */
+        .status-vendor {{
             background: #92400e;
             color: #fef3c7;
         }}
         
-        .status-badge.status-workorder {{
+        /* 🔵 WORK ORDER */
+        .status-workorder {{
             background: #1d4ed8;
             color: #dbeafe;
         }}
         
-        .status-badge.status-complete {{
-            background: #15803d;
+        /* 🟢 COMPLETE */
+        .status-complete {{
+            background: #166534;
             color: #dcfce7;
         }}
         
-        .status-badge.status-failed {{
-            background: #991b1b;
-            color: #fee2e2;
+        /* 🟢 TENANT NOTIFIED */
+        .status-tenant {{
+            background: #065f46;
+            color: #d1fae5;
         }}
         .enabled {{
             background: #052e16;
