@@ -1,7 +1,8 @@
 flask
-flask-cors
-openai
-python-dotenv
 twilio
+openai
 gunicorn
+flask-cors
+python-dotenv
 psycopg2-binary
+bcrypt
