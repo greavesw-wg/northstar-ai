@@ -1504,11 +1504,10 @@ def client_login():
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT id, username, password_hash, client_name, community_access_code, role
-        FROM client_users
-        WHERE username = %s
-    """, (username,))
+    cur.execute(
+        "SELECT username, password_hash FROM client_users WHERE username = %s",
+        (username,)
+    )
 
     user = cur.fetchone()
 
