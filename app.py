@@ -1509,10 +1509,11 @@ def client_login():
     conn = get_db_connection()
     cur = conn.cursor()
 
-    cur.execute(
-        "SELECT id, password_hash FROM clients WHERE username = %s",
-        (username,)
-    )
+    cur.execute("""
+        SELECT id, username, password_hash, client_name, community_access_code, role
+        FROM client_users
+        WHERE username = %s
+    """, (username,))
 
     user = cur.fetchone()
 
@@ -1527,7 +1528,7 @@ def client_login():
     token = jwt.encode(
         {"client_id": user_id},
         SECRET_KEY,
-        algorithm="HS256"
+        algorithm="HS256"                                   
     )
 
     return jsonify({"token": token})
