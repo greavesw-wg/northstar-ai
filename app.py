@@ -1520,7 +1520,12 @@ def client_login():
     if not user:
         return jsonify({"error": "Invalid username or password"}), 401
 
-    user_id, password_hash = user
+    user = cur.fetchone()
+
+    if not user:
+        return jsonify({"error": "Invalid login"}), 401
+
+    user_id, username, password_hash, client_name, community_access_code, role = user
 
     if not bcrypt.checkpw(password.encode(), password_hash.encode()):
         return jsonify({"error": "Invalid username or password"}), 401
