@@ -1505,7 +1505,11 @@ def client_login():
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT username, password_hash FROM client_users WHERE username = %s",
+        """
+        SELECT id, username, password_hash, client_name, community_access_code, role
+        FROM client_users
+        WHERE username = %s
+        """,
         (username,)
     )
 
@@ -1514,24 +1518,21 @@ def client_login():
     if not user:
         return jsonify({"error": "Invalid username or password"}), 401
 
-    user = cur.fetchone()
-
-    if not user:
-        return jsonify({"error": "Invalid login"}), 401
-
-    user_id, username, password_hash, client_name, community_access_code, role = user
+    user_id, db_username, password_hash, client_name, community_access_code, role = user
 
     if not bcrypt.checkpw(password.encode(), password_hash.encode()):
         return jsonify({"error": "Invalid username or password"}), 401
 
     token = jwt.encode(
-        {"client_id": user_id},
+        {
+            "client_id": user_id,
+            "community_access_code": community_access_code
+        },
         SECRET_KEY,
-        algorithm="HS256"                                   
+        algorithm="HS256"
     )
 
     return jsonify({"token": token})
-
 @app.route("/api/client/property", methods=["GET"])
 def get_property():
     token = request.headers.get("Authorization")
