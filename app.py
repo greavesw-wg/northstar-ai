@@ -3,20 +3,36 @@ import os
 import csv
 import re
 import html
+import jwt
+import bcrypt
+
+password = "test123"
+hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+
+print(hashed.decode())
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from flask import Flask, request, jsonify, redirect, url_for, Response
 from flask_cors import CORS
-from datetime import datetime
+
+app = Flask(__name__)
+SECRET_KEY = os.getenv("SECRET_KEY", "fallback_secret")
+
+CORS(app)
+
+from datetime import datetime, timedelta
 from uuid import uuid4
 from typing import Any
-from dotenv import load_dotenv
+
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 from openai import OpenAI
 from threading import Thread
 
 from ai_engine.maintenance_triage_engine import (
-    triage_message,
+     triage_message,
     generate_work_order,
     log_triage_event
 )
@@ -1482,6 +1498,77 @@ def toggle_service(record_id):
         "success": False,
         "error": "Record not found."
     }), 404
+
+@app.route("/api/client/login", methods=["POST"])
+def client_login():
+    data = request.get_json()
+
+    username = data.get("username")
+    password = data.get("password")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT id, password_hash FROM clients WHERE username = %s",
+        (username,)
+    )
+
+    user = cur.fetchone()
+
+    if not user:
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    user_id, password_hash = user
+
+    if not bcrypt.checkpw(password.encode(), password_hash.encode()):
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    token = jwt.encode(
+        {"client_id": user_id},
+        SECRET_KEY,
+        algorithm="HS256"
+    )
+
+    return jsonify({"token": token})
+
+@app.route("/api/client/property", methods=["GET"])
+def get_property():
+    token = request.headers.get("Authorization")
+
+    if not token:
+        return jsonify({"error": "Missing token"}), 401
+
+    try:
+        token = token.split(" ")[1]
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except:
+        return jsonify({"error": "Invalid token"}), 401
+
+    access_code = decoded.get("community_access_code")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT client_name, property_name, address
+        FROM properties
+        WHERE community_access_code = %s
+    """, (access_code,))
+
+    property_data = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if not property_data:
+        return jsonify({"error": "No property found"}), 404
+
+    return jsonify({
+        "client_name": property_data[0],
+        "property_name": property_data[1],
+        "address": property_data[2]
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
