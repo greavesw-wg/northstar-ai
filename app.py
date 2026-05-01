@@ -6,11 +6,6 @@ import html
 import jwt
 import bcrypt
 
-password = "test123"
-hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-
-print(hashed.decode())
-
 from dotenv import load_dotenv
 load_dotenv()
 
