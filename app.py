@@ -1543,7 +1543,7 @@ def get_property():
     try:
         token = token.split(" ")[1]
         decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    except:
+    except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
     access_code = decoded.get("community_access_code")
@@ -1552,23 +1552,39 @@ def get_property():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT client_name, property_name, address
+        SELECT
+            client_name,
+            property_name,
+            community_access_code,
+            address
         FROM properties
         WHERE community_access_code = %s
     """, (access_code,))
 
-    property_data = cur.fetchone()
+    row = cur.fetchone()
 
     cur.close()
     conn.close()
 
-    if not property_data:
+    if not row:
         return jsonify({"error": "No property found"}), 404
 
+    client_name, property_name, community_access_code, address = row
+
     return jsonify({
-        "client_name": property_data[0],
-        "property_name": property_data[1],
-        "address": property_data[2]
+        "client_name": client_name,
+        "property_name": property_name,
+        "community_access_code": community_access_code,
+        "address": address,
+        "city": "Plainsboro",
+        "state": "NJ",
+        "zip": "08536",
+        "building_count": 24,
+        "unit_count": 288,
+        "land_area": "34 acres of land",
+        "layouts": "One- and two-bedroom open-concept floor plans",
+        "stories": "Each building is 2 stories tall",
+        "website": "www.deercreeknj.com"
     })
 
 @app.route("/api/client/register", methods=["POST"])
