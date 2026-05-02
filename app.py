@@ -1553,7 +1553,6 @@ def get_property():
 
     cur.execute("""
         SELECT
-            client_name,
             property_name,
             community_access_code,
             address
@@ -1569,10 +1568,10 @@ def get_property():
     if not row:
         return jsonify({"error": "No property found"}), 404
 
-    client_name, property_name, community_access_code, address = row
+    property_name, community_access_code, address = row
 
     return jsonify({
-        "client_name": client_name,
+        "client_name": "Deer Creek",
         "property_name": property_name,
         "community_access_code": community_access_code,
         "address": address,
