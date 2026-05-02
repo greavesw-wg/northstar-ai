@@ -1571,6 +1571,56 @@ def get_property():
         "address": property_data[2]
     })
 
+@app.route("/api/client/register", methods=["POST"])
+def client_register():
+    data = request.get_json()
+
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    client_name = data.get("client_name", "").strip()
+    community_access_code = data.get("community_access_code", "").strip().upper()
+
+    if not username or not password or not client_name or not community_access_code:
+        return jsonify({"error": "All fields are required"}), 400
+
+    password_hash = bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt()
+    ).decode("utf-8")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            INSERT INTO client_users (
+                username,
+                password_hash,
+                client_name,
+                community_access_code,
+                role
+            )
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            username,
+            password_hash,
+            client_name,
+            community_access_code,
+            "client"
+        ))
+
+        conn.commit()
+
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({"error": "Username already exists"}), 409
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"success": True, "message": "Client user created"}), 201
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
