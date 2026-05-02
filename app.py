@@ -1546,6 +1546,7 @@ def get_property():
     except Exception:
         return jsonify({"error": "Invalid token"}), 401
 
+    # 🔑 THIS is coming from your login token
     access_code = decoded.get("community_access_code")
 
     conn = get_db_connection()
@@ -1554,11 +1555,16 @@ def get_property():
     cur.execute("""
         SELECT
             property_name,
-            community_access_code,
-            address
+            address_line1,
+            city,
+            state,
+            postal_code,
+            acreage,
+            building_count,
+            unit_count
         FROM properties
-        WHERE community_access_code = %s
-    """, (access_code,))
+        WHERE property_code = %s
+    """, (access_code,))   # <-- IMPORTANT: matches property_code
 
     row = cur.fetchone()
 
@@ -1568,24 +1574,31 @@ def get_property():
     if not row:
         return jsonify({"error": "No property found"}), 404
 
-    property_name, community_access_code, address = row
+    (
+        property_name,
+        address,
+        city,
+        state,
+        zip_code,
+        acreage,
+        building_count,
+        unit_count
+    ) = row
 
     return jsonify({
-        "client_name": "Deer Creek",
+        "client_name": "Deer Creek Apartment Community",
         "property_name": property_name,
-        "community_access_code": community_access_code,
         "address": address,
-        "city": "Plainsboro",
-        "state": "NJ",
-        "zip": "08536",
-        "building_count": 24,
-        "unit_count": 288,
-        "land_area": "34 acres of land",
+        "city": city,
+        "state": state,
+        "zip": zip_code,
+        "building_count": building_count,
+        "unit_count": unit_count,
+        "land_area": f"{acreage} acres of land",
         "layouts": "One- and two-bedroom open-concept floor plans",
         "stories": "Each building is 2 stories tall",
         "website": "www.deercreeknj.com"
     })
-
 @app.route("/api/client/register", methods=["POST"])
 def client_register():
     data = request.get_json()
