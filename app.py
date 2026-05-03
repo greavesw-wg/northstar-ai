@@ -1454,6 +1454,59 @@ def dashboard():
     """
     return page_html
 
+@app.route("/api/client/dashboard", methods=["GET"])
+def api_client_dashboard():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            mr.id,
+            mr.resident_name,
+            mr.resident_phone,
+            COALESCE(p.property_name, 'Unassigned Community') AS property_name,
+            mr.building_label,
+            mr.unit_label,
+            mr.issue_description,
+            mr.status,
+            mr.submitted_at,
+            COALESCE(mr.assigned_type, 'In-House') AS assigned_type
+        FROM maintenance_requests_v2 mr
+        LEFT JOIN properties p
+            ON mr.property_id = p.id
+        WHERE COALESCE(mr.dashboard_status, 'visible') = 'visible'
+        ORDER BY mr.submitted_at DESC
+        LIMIT 100
+    """)
+
+    rows = cur.fetchall()
+
+    tickets = []
+
+    for row in rows:
+        submitted_at = row[8]
+        formatted_time = submitted_at.strftime("%B %d, %Y, %I:%M %p").replace(" 0", " ")
+
+        tickets.append({
+            "id": row[0],
+            "ticket_number": f"NS-{submitted_at.strftime('%Y%m%d')}-{row[0]:06d}",
+            "time": formatted_time,
+            "event": "Maintenance Request",
+            "client": row[1],
+            "phone": row[2],
+            "property": row[3],
+            "building": row[4],
+            "unit": row[5],
+            "issue": row[6],
+            "status": row[7],
+            "assigned": row[9]
+        })
+
+    cur.close()
+    conn.close()
+
+    return jsonify(tickets)
+
 @app.route("/delete-ticket/<int:ticket_id>", methods=["POST"])
 @requires_auth
 def delete_ticket(ticket_id):
