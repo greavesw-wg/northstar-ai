@@ -1507,6 +1507,57 @@ def api_client_dashboard():
 
     return jsonify(tickets)
 
+@app.route("/api/client/work-orders", methods=["GET"])
+def api_client_work_orders():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            mr.id,
+            mr.resident_name,
+            mr.resident_phone,
+            COALESCE(p.property_name, 'Unassigned Community') AS property_name,
+            mr.building_label,
+            mr.unit_label,
+            mr.issue_description,
+            mr.status,
+            mr.submitted_at,
+            COALESCE(mr.assigned_type, 'In-House') AS assigned_type
+        FROM maintenance_requests_v2 mr
+        LEFT JOIN properties p
+            ON mr.property_id = p.id
+        WHERE COALESCE(mr.dashboard_status, 'visible') = 'visible'
+          AND COALESCE(mr.status, 'new') NOT IN ('Closed', 'closed')
+        ORDER BY mr.submitted_at DESC
+        LIMIT 100
+    """)
+
+    rows = cur.fetchall()
+    work_orders = []
+
+    for row in rows:
+        submitted_at = row[8]
+
+        work_orders.append({
+            "id": row[0],
+            "ticket_number": f"NS-{submitted_at.strftime('%Y%m%d')}-{row[0]:06d}",
+            "resident_name": row[1],
+            "resident_phone": row[2],
+            "property": row[3],
+            "building": row[4],
+            "unit": row[5],
+            "issue": row[6],
+            "status": row[7],
+            "submitted_at": submitted_at.strftime("%B %d, %Y, %I:%M %p").replace(" 0", " "),
+            "assigned_type": row[9]
+        })
+
+    cur.close()
+    conn.close()
+
+    return jsonify(work_orders)
+
 @app.route("/delete-ticket/<int:ticket_id>", methods=["POST"])
 @requires_auth
 def delete_ticket(ticket_id):
