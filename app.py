@@ -395,24 +395,57 @@ def debug_db():
 
 @app.route("/sms", methods=["POST"])
 def sms_handler():
-    to_number = request.form.get("To", "").strip()
     from_number = request.form.get("From", "").strip()
+    to_number = request.form.get("To", "").strip()
     message = request.form.get("Body", "").strip()
 
-    print(f"Incoming SMS -> To: {to_number}, From: {from_number}, Body: {message}", flush=True)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    # Log first so no request is lost
-    log_message(from_number, message)
+    # 🔥 STEP 1: Resolve property from phone number
+    cur.execute("""
+        SELECT 
+            p.id,
+            p.property_name
+        FROM property_phone_numbers ppn
+        JOIN properties p ON ppn.property_id = p.id
+        WHERE ppn.phone_number = %s
+    """, (to_number,))
 
-    # Temporary reply while we wire in the full AI engine
+    result = cur.fetchone()
+
+    if result:
+        property_id, property_name = result
+    else:
+        property_id = None
+        property_name = "Unassigned Community"
+
+    print(f"Incoming SMS → To: {to_number}, Property: {property_name}")
+
+    # 🔥 STEP 2: Log request with property_id
+    cur.execute("""
+        INSERT INTO maintenance_requests_v2 (
+            resident_phone,
+            issue_description,
+            property_id,
+            status,
+            submitted_at
+        )
+        VALUES (%s, %s, %s, 'New', NOW())
+    """, (from_number, message, property_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    # 🔥 STEP 3: Reply
     resp = MessagingResponse()
     resp.message(
-        "NorthStar Maintenance: Your request has been received. "
-        "A technician will review shortly."
+        f"NorthStar AI: Request received for {property_name}. "
+        f"A technician will review shortly."
     )
 
     return str(resp)
-
 
 @app.route("/sms-fallback", methods=["POST"])
 def sms_fallback():
@@ -704,22 +737,35 @@ def maintenance_request():
             print("Handled by In-House Maintenance")
 
         # ------------------------------------------------------------
-        # NORTH STAR ROUTING CHANNELS
-        # One routing number per community/channel.
-        # Only ONE should be active for this current maintenance form.
+        # NORTH STAR DATABASE-DRIVEN ROUTING
+        # Web form route:
+        # Community Access Code -> properties.property_code
         # ------------------------------------------------------------
 
-        routing_phone = "6094551240"  # Channel 01 - Hunters Glen Apartments
+        community_access_code = data.get("community_access_code", "").strip().upper()
+        print(f"FORM ACCESS CODE RECEIVED: [{community_access_code}]", flush=True)
+        cur.execute("""
+            SELECT id, property_name
+            FROM properties
+            WHERE UPPER(property_code) = %s
+              AND status = 'active'
+            LIMIT 1
+        """, (community_access_code,))
 
-        # routing_phone = "XXXXXXXXXX"  # Channel 02 - Deer Creek
-        # routing_phone = "XXXXXXXXXX"  # Channel 03 - Community 03
-        # routing_phone = "XXXXXXXXXX"  # Channel 04 - Community 04
-        # routing_phone = "XXXXXXXXXX"  # Channel 05 - Community 05
-        # routing_phone = "XXXXXXXXXX"  # Channel 06 - Community 06
-        # routing_phone = "XXXXXXXXXX"  # Channel 07 - Community 07
-        # routing_phone = "XXXXXXXXXX"  # Channel 08 - Community 08
-        # routing_phone = "XXXXXXXXXX"  # Channel 09 - Community 09
-        # routing_phone = "XXXXXXXXXX"  # Channel 10 - Community 10
+        property_result = cur.fetchone()
+
+        if not property_result:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": False,
+                "message": "Invalid community access code. Please check the code provided by your property management team."
+            }), 400
+
+        property_id = property_result[0]
+        property_name = property_result[1]
+
+        print(f"Matched community access code {community_access_code} to {property_name}", flush=True)
 
         cur.execute(""" 
             SELECT create_maintenance_request_from_intake(
@@ -732,7 +778,7 @@ def maintenance_request():
                 %s::text
             )
         """, (
-            routing_phone,
+            property_id,
             building,
             unit,
             name,
@@ -795,7 +841,7 @@ def maintenance_request():
 @app.route("/contact", methods=["POST"])
 def contact():
     data = request.get_json(silent=True) or {}
-
+    print("FORM DATA RECEIVED:", data, flush=True)
     first_name = str(data.get("first_name", "")).strip()
     last_name = str(data.get("last_name", "")).strip()
     email = str(data.get("email", "")).strip()
