@@ -410,7 +410,7 @@ def sms_handler():
         FROM properties
         WHERE UPPER(property_code) = %s
           AND status = 'active'
-        LIMIT 1
+        LIMIT 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
     """, (community_access_code,))
 
     property_row = cur.fetchone()
@@ -651,6 +651,15 @@ def maintenance_request():
     building = " ".join(str(data.get("building", "")).split()).strip()
     unit = " ".join(str(data.get("unit", "")).split()).strip()
     issue = str(data.get("issue", "")).strip()
+
+    print("FORM VALUES:", {
+        "name": name,
+        "phone": phone,
+        "community_access_code": community_access_code,
+        "building": building,
+        "unit": unit,
+        "issue": issue
+    }, flush=True)
 
     if not name or not phone or not community_access_code or not building or not unit or not issue:
             return jsonify({"error": "Name, phone, building, unit, and issue are required."}), 400
