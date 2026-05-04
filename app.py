@@ -669,16 +669,11 @@ def maintenance_request():
         cur = conn.cursor()
 
         cur.execute("""
-            SELECT
-                client_name,
-                property_name,
-                property_city,
-                property_state,
-                property_zip,
-                default_routing_phone
-            FROM community_routing
-            WHERE community_access_code = %s
-              AND is_active = TRUE
+            SELECT id, property_name
+            FROM properties
+            WHERE UPPER(property_code) = %s
+              AND status = 'active'
+            LIMIT 1
         """, (community_access_code,))
 
         community = cur.fetchone()
@@ -688,7 +683,8 @@ def maintenance_request():
                 "error": "Invalid community access code. Please check the code provided by your property management team."
             }), 400
 
-        client_name, property_name, property_city, property_state, property_zip, routing_phone = community
+        property_id = community[0]
+        property_name = community[1]
 
         # Defer strict matching until client/community templates exist.
         property_id = None
