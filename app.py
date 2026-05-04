@@ -643,7 +643,7 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
 
 @app.route("/maintenance-request", methods=["POST"])
 def maintenance_request():
-    data = request.form
+    data = request.get_json(silent=True) or request.form
 
     name = str(data.get("name", "")).strip()
     phone = clean_phone(data.get("phone", ""))
