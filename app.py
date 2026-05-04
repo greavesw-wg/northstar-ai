@@ -404,23 +404,27 @@ def sms_handler():
 
     # 🔥 STEP 1: Resolve property from phone number
     cur.execute("""
-        SELECT 
-            p.id,
-            p.property_name
-        FROM property_phone_numbers ppn
-        JOIN properties p ON ppn.property_id = p.id
-        WHERE ppn.phone_number = %s
-    """, (to_number,))
+        SELECT
+            id,
+            property_name
+        FROM properties
+        WHERE UPPER(property_code) = %s
+          AND status = 'active'
+        LIMIT 1
+    """, (community_access_code,))
 
-    result = cur.fetchone()
+    property_row = cur.fetchone()
 
-    if result:
-        property_id, property_name = result
-    else:
-        property_id = None
-        property_name = "Unassigned Community"
+    if not property_row:
+        cur.close()
+        conn.close()
+        return jsonify({
+                           "error": "Invalid community access code. Please check the code provided by your property management team."}), 400
 
-    print(f"Incoming SMS → To: {to_number}, Property: {property_name}")
+    property_id = property_row[0]
+    property_name = property_row[1]
+
+    print(f"Matched inbound number {to_number} to {property_name}", flush=True)
 
     # 🔥 STEP 2: Log request with property_id
     cur.execute("""
