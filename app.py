@@ -395,8 +395,11 @@ def debug_db():
 
 @app.route("/sms", methods=["POST"])
 def sms_handler():
+    to_number = request.form.get("To", "").strip()
     from_number = request.form.get("From", "").strip()
     message = request.form.get("Body", "").strip()
+
+    print(f"Incoming SMS -> To: {to_number}, From: {from_number}, Body: {message}", flush=True)
 
     # Log first so no request is lost
     log_message(from_number, message)
@@ -1557,6 +1560,57 @@ def api_client_work_orders():
     conn.close()
 
     return jsonify(work_orders)
+
+@app.route("/api/client/work-orders/update", methods=["POST"])
+def update_work_order():
+    data = request.get_json()
+
+    ticket_id = data.get("ticket_id")
+    notes = data.get("notes", "").strip()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # 1. Log the update (history table)
+        cur.execute("""
+            INSERT INTO work_order_updates (
+                ticket_id,
+                update_type,
+                work_notes,
+                status_before,
+                status_after,
+                updated_by
+            )
+            SELECT
+                id,
+                'update',
+                %s,
+                status,
+                'completed_pending_tenant',
+                'system'
+            FROM maintenance_requests_v2
+            WHERE id = %s
+        """, (notes, ticket_id))
+
+        # 2. Update main ticket status
+        cur.execute("""
+            UPDATE maintenance_requests_v2
+            SET status = 'completed_pending_tenant'
+            WHERE id = %s
+        """, (ticket_id,))
+
+        conn.commit()
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route("/delete-ticket/<int:ticket_id>", methods=["POST"])
 @requires_auth
