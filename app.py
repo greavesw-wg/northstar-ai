@@ -797,6 +797,7 @@ def maintenance_request():
                 %s::text,
                 %s::text,
                 %s::text,
+                %s::text,
                 %s::text
             )
         """, (
