@@ -596,6 +596,10 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
                 f"Work order generated for Building {building}, Unit {unit}."
             )
 
+            print(f"ACK ROUTING PHONE: [{routing_phone}] for property [{property_name}]", flush=True)
+            ack = send_tenant_acknowledgment(request_id, phone, routing_phone)
+            print(f"ACK RESULT: {ack}", flush=True)
+
         except Exception as e:
             safe_log_work_order_activity(
                 request_id,
@@ -604,8 +608,8 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
             )
             print(f"[TRIAGE ERROR] {e}")
 
-        print(f"ACK ROUTING PHONE: [{routing_phone}] for property [{property_name}]", flush=True)
-        ack = send_tenant_acknowledgment(request_id, phone, routing_phone)
+
+
         update_ticket_status(
             request_id,
             "new",
