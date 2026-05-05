@@ -565,14 +565,14 @@ def send_tenant_acknowledgment(request_id, phone, routing_phone):
             "status": "failed",
             "sid": None,
             "error": str(e)
-        }
-
+            print(f"ACK ROUTING PHONE: [{routing_phone}] for property [{property_name}]", flush=True)       }
+ack = send_tenant_acknowledgment(request_id, phone, routing_phone)
 def run_post_submission_tasks(request_id, name, phone, building, unit, issue, assigned_type, property_name,
                                   routing_phone):
     try:
         request_payload = {
             "request_id": request_id,
-            "property_name": "Hunters Glen Apartments",
+            "property_name": property_name,
             "building": building,
             "unit_number": unit,
             "resident_name": name,
