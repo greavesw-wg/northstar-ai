@@ -792,7 +792,7 @@ def maintenance_request():
 
         cur.execute("""
             SELECT create_maintenance_request_from_intake(
-                %s::int,
+                %s::text,
                 %s::text,
                 %s::text,
                 %s::text,
