@@ -525,17 +525,16 @@ def update_ticket_status(request_id, status, event_type, message, current_step=N
     except Exception as e:
         print(f"[TICKET STATUS ERROR] request_id={request_id} status={status} event={event_type}: {e}")
 
-def send_tenant_acknowledgement(request_id, phone):
+    def send_tenant_acknowledgment(request_id, phone, routing_phone):
     try:
         sms_phone = format_phone(phone)
 
         message = twilio_client.messages.create(
-
             body=(
                 "North Star AI: Your maintenance request has been received. "
                 "Updates to your maintenance request will be sent to this number."
             ),
-            messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
+            from_=routing_phone,
             to=sms_phone
         )
 
@@ -568,7 +567,8 @@ def send_tenant_acknowledgement(request_id, phone):
             "error": str(e)
         }
 
-def run_post_submission_tasks(request_id, name, phone, building, unit, issue, assigned_type):
+def run_post_submission_tasks(request_id, name, phone, building, unit, issue, assigned_type, property_name,
+                                  routing_phone):
     try:
         request_payload = {
             "request_id": request_id,
@@ -604,7 +604,7 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
             )
             print(f"[TRIAGE ERROR] {e}")
 
-        ack = send_tenant_acknowledgement(request_id, phone)
+        ack = send_tenant_acknowledgment(request_id, phone, routing_phone)
 
         update_ticket_status(
             request_id,
@@ -685,6 +685,20 @@ def maintenance_request():
 
         property_id = community[0]
         property_name = community[1]
+
+        cur.execute("""
+            SELECT phone_number
+            FROM property_phone_numbers
+            WHERE property_id = %s
+            LIMIT 1
+        """, (property_id,))
+
+        phone_row = cur.fetchone()
+
+        if phone_row:
+            routing_phone = phone_row[0]
+        else:
+            routing_phone = None
 
         # Defer strict matching until client/community templates exist.
         property_id = None
@@ -776,10 +790,9 @@ def maintenance_request():
 
         print(f"Matched community access code {community_access_code} to {property_name}", flush=True)
 
-        cur.execute(""" 
+        cur.execute("""
             SELECT create_maintenance_request_from_intake(
-                %s::text,
-                %s::text,
+                %s::int,
                 %s::text,
                 %s::text,
                 %s::text,
@@ -829,7 +842,7 @@ def maintenance_request():
 
         Thread(
             target=run_post_submission_tasks,
-            args=(request_id, name, phone, building, unit, issue, assigned_type),
+            args=(request_id, name, phone, building, unit, issue, assigned_type, property_name, routing_phone),
             daemon=True
         ).start()
 
