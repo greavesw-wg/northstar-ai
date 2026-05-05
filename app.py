@@ -525,7 +525,7 @@ def update_ticket_status(request_id, status, event_type, message, current_step=N
     except Exception as e:
         print(f"[TICKET STATUS ERROR] request_id={request_id} status={status} event={event_type}: {e}")
 
-    def send_tenant_acknowledgment(request_id, phone, routing_phone):
+def send_tenant_acknowledgment(request_id, phone, routing_phone):
     try:
         sms_phone = format_phone(phone)
 
