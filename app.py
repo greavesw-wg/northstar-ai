@@ -95,6 +95,32 @@ def generate_tenant_close_code():
     import random
     return str(random.randint(100000, 999999))
 
+def send_sms(to_phone, message_body):
+    try:
+        sms_phone = format_phone(to_phone)
+
+        message = twilio_client.messages.create(
+            body=message_body,
+            messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
+            to=sms_phone
+        )
+
+        return {
+            "sent": True,
+            "status": str(message.status),
+            "sid": message.sid,
+            "error": None
+        }
+
+    except Exception as e:
+        print(f"[TWILIO SEND_SMS ERROR] {e}", flush=True)
+        return {
+            "sent": False,
+            "status": "failed",
+            "sid": None,
+            "error": str(e)
+        }
+
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
