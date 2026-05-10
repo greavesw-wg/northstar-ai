@@ -91,7 +91,9 @@ def build_tenant_assignment_message(assigned_type, assigned_name):
         f"{assigned_name} from our vendor network. You will receive updates as the request progresses."
     )
 
-
+def generate_tenant_close_code():
+    import random
+    return str(random.randint(100000, 999999))
 
 load_dotenv()
 
@@ -649,16 +651,17 @@ def send_tenant_acknowledgment(request_id, phone, tenant_close_code):
         }
 
 def run_post_submission_tasks(
-            request_id,
-            name,
-            phone,
-            building,
-            unit,
-            issue,
-            assigned_type,
-            property_name,
-            tenant_close_code,
-            routing_phone=None
+    request_id,
+    name,
+    phone,
+    building,
+    unit,
+    issue,
+    assigned_type,
+    property_name,
+    tenant_close_code,
+    routing_phone
+
     ):
     try:
         request_payload = {
