@@ -188,7 +188,7 @@ def generate_ticket_number(ticket_id, submitted_at):
 
 def format_status_badge(status_label, current_step=None):
     display_status = current_step or status_label
-    step = display_status.lower()
+    step = str(display_status or "").lower().replace("_", " ")
 
     if "tenant notified" in step:
         cls = "status-tenant"
