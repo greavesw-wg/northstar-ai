@@ -603,14 +603,16 @@ def update_ticket_status(request_id, status, event_type, message, current_step=N
     except Exception as e:
         print(f"[TICKET STATUS ERROR] request_id={request_id} status={status} event={event_type}: {e}")
 
-def send_tenant_acknowledgment(request_id, phone):
+def send_tenant_acknowledgment(request_id, phone, tenant_close_code):
     try:
         sms_phone = format_phone(phone)
 
         message = twilio_client.messages.create(
             body=(
-                "North Star AI: Your maintenance request has been received. "
-                "Updates to your maintenance request will be sent to this number."
+                f"North Star AI: Your maintenance request has been received. "
+                f"Work Order #{request_id} has been created. "
+                f"Your closeout confirmation code is {tenant_close_code}. "
+                f"When the work is completed satisfactorily, reply CLOSE {tenant_close_code}."
             ),
             messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
             to=sms_phone
@@ -675,8 +677,22 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
             )
 
             print(f"ACK ROUTING PHONE: [{routing_phone}] for property [{property_name}]", flush=True)
-            ack = send_tenant_acknowledgment(request_id, phone)
+            ack = send_tenant_acknowledgment(request_id, phone, tenant_close_code)
             print(f"ACK RESULT: {ack}", flush=True)
+
+            dispatch_target = get_dispatch_target(assigned_type)
+
+            dispatch_message = build_dispatch_message(
+                ticket_id=request_id,
+                tenant_name=name,
+                property_name=property_name,
+                building=building,
+                unit=unit,
+                issue=issue,
+                tenant_phone=phone,
+            )
+
+            send_sms(dispatch_target["phone"], dispatch_message)
 
         except Exception as e:
             safe_log_work_order_activity(
@@ -686,14 +702,12 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
             )
             print(f"[TRIAGE ERROR] {e}")
 
-
-
         update_ticket_status(
             request_id,
-            "new",
-            "TENANT_NOTIFIED",
-            "Tenant acknowledgement sent",
-            "Tenant Notified"
+            status="WORK_ORDER_CREATED",
+            event_type="TENANT_NOTIFIED",
+            message="Tenant acknowledgment sent.",
+            current_step="Tenant Notified"
         )
 
         conn = get_db_connection()
