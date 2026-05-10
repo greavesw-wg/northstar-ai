@@ -46,6 +46,53 @@ TICKET_STATUS = [
     "FAILED"
 ]
 
+DISPATCH_DIRECTORY = {
+    "In-House": {
+        "name": "Dwayne",
+        "phone": "+16099649408",
+        "role": "Technician",
+        "close_code": "DWAYNE1001",
+    },
+    "Outsource": {
+        "name": "Barbara",
+        "phone": "+16098515173",
+        "role": "Vendor",
+        "close_code": "BARBARA2001",
+    },
+}
+
+def get_dispatch_target(assigned_type):
+    return DISPATCH_DIRECTORY.get(assigned_type, DISPATCH_DIRECTORY["In-House"])
+
+
+def build_dispatch_message(ticket_id, tenant_name, property_name, building, unit, issue, tenant_phone):
+    return (
+        f"North Star AI Dispatch:\n"
+        f"Work Order: {ticket_id}\n"
+        f"Tenant: {tenant_name}\n"
+        f"Phone: {tenant_phone}\n"
+        f"Property: {property_name}\n"
+        f"Building: {building}\n"
+        f"Unit: {unit}\n"
+        f"Issue: {issue}\n\n"
+        f"Reply with your closeout code when complete."
+    )
+
+
+def build_tenant_assignment_message(assigned_type, assigned_name):
+    if assigned_type == "In-House":
+        return (
+            f"North Star AI: Your maintenance request has been assigned to "
+            f"{assigned_name}. You will receive updates as the request progresses."
+        )
+
+    return (
+        f"North Star AI: Your maintenance request has been assigned to "
+        f"{assigned_name} from our vendor network. You will receive updates as the request progresses."
+    )
+
+
+
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -427,16 +474,47 @@ def sms_handler():
     print(f"Matched inbound number {to_number} to {property_name}", flush=True)
 
     # 🔥 STEP 2: Log request with property_id
+
+    tenant_close_code = generate_tenant_close_code()
+    assigned_type = "In-House"
+
+    dispatch_target = get_dispatch_target(assigned_type)
+
+    technician_close_code = dispatch_target["close_code"]
+    assigned_name = dispatch_target["name"]
+    dispatch_phone = dispatch_target["phone"]
+
+    ticket_id = "Pending"
+
+    dispatch_message = build_dispatch_message(
+        ticket_id=ticket_id,
+        tenant_name="SMS Resident",
+        property_name=property_name,
+        building="Unknown",
+        unit="Unknown",
+        issue=message,
+        tenant_phone=from_number,
+    )
+
+    tenant_assignment_message = build_tenant_assignment_message(
+        assigned_type=assigned_type,
+        assigned_name=assigned_name,
+    )
+
     cur.execute("""
         INSERT INTO maintenance_requests_v2 (
             resident_phone,
             issue_description,
             property_id,
             status,
-            submitted_at
+            submitted_at,
+            tenant_close_code,
+            technician_close_code,
+            technician_confirmed,
+            tenant_confirmed
         )
-        VALUES (%s, %s, %s, 'New', NOW())
-    """, (from_number, message, property_id))
+        VALUES (%s, %s, %s, 'WORK_ORDER_CREATED', NOW(), %s, %s, FALSE, FALSE)
+    """, (from_number, message, property_id, tenant_close_code, technician_close_code))
 
     conn.commit()
     cur.close()
