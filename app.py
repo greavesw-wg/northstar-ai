@@ -647,8 +647,19 @@ def send_tenant_acknowledgment(request_id, phone, tenant_close_code):
             "error": str(e)
 
         }
-def run_post_submission_tasks(request_id, name, phone, building, unit, issue, assigned_type, property_name,
-                                  routing_phone):
+
+def run_post_submission_tasks(
+            request_id,
+            name,
+            phone,
+            building,
+            unit,
+            issue,
+            assigned_type,
+            property_name,
+            tenant_close_code,
+            routing_phone=None
+    ):
     try:
         request_payload = {
             "request_id": request_id,
