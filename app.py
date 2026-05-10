@@ -603,7 +603,7 @@ def update_ticket_status(request_id, status, event_type, message, current_step=N
     except Exception as e:
         print(f"[TICKET STATUS ERROR] request_id={request_id} status={status} event={event_type}: {e}")
 
-def send_tenant_acknowledgment(request_id, phone, routing_phone):
+def send_tenant_acknowledgment(request_id, phone):
     try:
         sms_phone = format_phone(phone)
 
@@ -612,7 +612,7 @@ def send_tenant_acknowledgment(request_id, phone, routing_phone):
                 "North Star AI: Your maintenance request has been received. "
                 "Updates to your maintenance request will be sent to this number."
             ),
-            from_=routing_phone,
+            messaging_service_sid=os.getenv("TWILIO_MESSAGING_SERVICE_SID"),
             to=sms_phone
         )
 
@@ -675,7 +675,7 @@ def run_post_submission_tasks(request_id, name, phone, building, unit, issue, as
             )
 
             print(f"ACK ROUTING PHONE: [{routing_phone}] for property [{property_name}]", flush=True)
-            ack = send_tenant_acknowledgment(request_id, phone, routing_phone)
+            ack = send_tenant_acknowledgment(request_id, phone)
             print(f"ACK RESULT: {ack}", flush=True)
 
         except Exception as e:
