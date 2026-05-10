@@ -950,7 +950,7 @@ def maintenance_request():
             f"Work order opened and assigned to {assigned_type}.",
             "Work Order Created"
         )
-        tenant_close_code = routing_phone
+        tenant_close_code = generate_tenant_close_code()
         Thread(
             target=run_post_submission_tasks,
             args=(request_id, name, phone, building, unit, issue, assigned_type, property_name, tenant_close_code, routing_phone),
