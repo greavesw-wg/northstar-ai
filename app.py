@@ -1274,9 +1274,14 @@ def dashboard():
 
         status_label = {
             "new": "New",
-            "in_progress": "In Progress",
-            "complete": "Complete"
-        }.get(status, "Unknown")
+            "WORK_ORDER_CREATED": "Work Order Created",
+            "TENANT_NOTIFIED": "Tenant Notified",
+            "DISPATCHED": "Dispatched",
+            "IN_PROGRESS": "In Progress",
+            "COMPLETED": "Completed",
+            "CLOSED": "Closed",
+            "FAILED": "Failed",
+        }.get(status, status or "Unknown")
 
         current_step_safe = html.escape(current_step or status_label, quote=True)
 
