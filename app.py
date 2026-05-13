@@ -474,15 +474,26 @@ def sms_handler():
     to_number = request.form.get("To", "").strip()
     message = request.form.get("Body", "").strip()
 
+    print("===== INBOUND /SMS DEBUG =====", flush=True)
+    print(f"FROM: [{from_number}]", flush=True)
+    print(f"TO: [{to_number}]", flush=True)
+    print(f"BODY: [{message}]", flush=True)
+
     # STEP 0: Check whether this inbound SMS is a technician/vendor command.
     dispatch_response = handle_dispatch_person_sms(from_number, message)
     if dispatch_response is not None:
-        return dispatch_response
+            print("DISPATCH RESPONSE RETURNED", flush=True)
+            return dispatch_response
+
+    print("NO DISPATCH RESPONSE - CONTINUING TO TENANT CLOSE CHECK", flush=True)
 
     # STEP 0B: Check whether this inbound SMS is a tenant closeout confirmation.
     tenant_close_response = handle_tenant_close_sms(from_number, message)
     if tenant_close_response is not None:
-        return tenant_close_response
+            print("TENANT CLOSE RESPONSE RETURNED", flush=True)
+            return tenant_close_response
+
+    print("NO TENANT CLOSE RESPONSE - CONTINUING AS NEW SMS REQUEST", flush=True)
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -498,7 +509,7 @@ def sms_handler():
         JOIN properties p
             ON p.id = pp.property_id
         WHERE pp.phone_number = %s
-          AND p.status = 'active'
+            AND p.status = 'active'
         LIMIT 1
     """, (normalized_to_number,))
 
