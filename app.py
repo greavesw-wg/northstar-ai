@@ -474,19 +474,33 @@ def sms_handler():
     to_number = request.form.get("To", "").strip()
     message = request.form.get("Body", "").strip()
 
+    # STEP 0: Check whether this inbound SMS is a technician/vendor command.
+    dispatch_response = handle_dispatch_person_sms(from_number, message)
+    if dispatch_response is not None:
+        return dispatch_response
+
+    # STEP 0B: Check whether this inbound SMS is a tenant closeout confirmation.
+    tenant_close_response = handle_tenant_close_sms(from_number, message)
+    if tenant_close_response is not None:
+        return tenant_close_response
+
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # 🔥 STEP 1: Resolve property from phone number
+    # STEP 1: Resolve property from inbound Twilio phone number
+    normalized_to_number = normalize_sms_phone(to_number)
+
     cur.execute("""
         SELECT
-            id,
-            property_name
-        FROM properties
-        WHERE UPPER(property_code) = %s
-          AND status = 'active'
-        LIMIT 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
-    """, (community_access_code,))
+            p.id,
+            p.property_name
+        FROM property_phone_numbers pp
+        JOIN properties p
+            ON p.id = pp.property_id
+        WHERE pp.phone_number = %s
+          AND p.status = 'active'
+        LIMIT 1
+    """, (normalized_to_number,))
 
     property_row = cur.fetchone()
 
@@ -494,12 +508,13 @@ def sms_handler():
         cur.close()
         conn.close()
         return jsonify({
-                           "error": "Invalid community access code. Please check the code provided by your property management team."}), 400
+            "error": "Inbound SMS number is not mapped to an active property."
+        }), 400
 
     property_id = property_row[0]
     property_name = property_row[1]
 
-    print(f"Matched inbound number {to_number} to {property_name}", flush=True)
+    print(f"Matched inbound number {normalized_to_number} to {property_name}", flush=True)
 
     # 🔥 STEP 2: Log request with property_id
 
@@ -582,6 +597,306 @@ def format_phone(phone: str) -> str:
 
     return f"+{digits}"
 
+def normalize_sms_phone(phone):
+    digits = re.sub(r"\D", "", phone or "")
+
+    if len(digits) == 10:
+        return "+1" + digits
+
+    if len(digits) == 11 and digits.startswith("1"):
+        return "+" + digits
+
+    if phone and phone.startswith("+"):
+        return phone
+
+    return phone
+
+
+def find_dispatch_person_by_code(message_body):
+    incoming_code = (message_body or "").strip().upper()
+
+    for assigned_type, person in DISPATCH_DIRECTORY.items():
+        close_code = person.get("close_code", "").strip().upper()
+
+        if incoming_code == close_code:
+            return {
+                "assigned_type": assigned_type,
+                "name": person.get("name"),
+                "phone": normalize_sms_phone(person.get("phone")),
+                "role": person.get("role"),
+                "close_code": close_code,
+            }
+
+    return None
+
+
+def handle_dispatch_person_sms(from_number, message_body):
+    dispatch_person = find_dispatch_person_by_code(message_body)
+
+    if not dispatch_person:
+        return None
+
+    from_number = normalize_sms_phone(from_number)
+    dispatch_phone = normalize_sms_phone(dispatch_person["phone"])
+    assigned_name = dispatch_person["name"]
+    assigned_type = dispatch_person["assigned_type"]
+
+    if from_number != dispatch_phone:
+        resp = MessagingResponse()
+        resp.message(
+            "North Star AI: This dispatch code is not authorized from this phone number."
+        )
+        return str(resp)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # Find the newest open work order assigned to this dispatch type.
+        cur.execute("""
+            SELECT
+                id,
+                resident_phone,
+                status,
+                tenant_close_code,
+                technician_confirmed,
+                tenant_confirmed
+            FROM maintenance_requests_v2
+            WHERE technician_close_code = %s
+              AND status IN (
+                    'WORK_ORDER_CREATED',
+                    'ASSIGNED_DWAYNE',
+                    'ASSIGNED_BARBARA',
+                    'COMPLETION_PENDING_CONFIRMATION'
+              )
+            ORDER BY submitted_at DESC
+            LIMIT 1
+        """, (dispatch_person["close_code"],))
+
+        row = cur.fetchone()
+
+        if not row:
+            resp = MessagingResponse()
+            resp.message(
+                f"North Star AI: No active work order was found for {assigned_name}."
+            )
+            return str(resp)
+
+        request_id = row[0]
+        tenant_phone = row[1]
+        current_status = row[2]
+        tenant_close_code = row[3]
+        technician_confirmed = row[4]
+        tenant_confirmed = row[5]
+
+        # First technician/vendor signal: accept assignment.
+        if current_status == "WORK_ORDER_CREATED":
+            assigned_status = f"ASSIGNED_{assigned_name.upper()}"
+
+            cur.execute("""
+                UPDATE maintenance_requests_v2
+                SET status = %s,
+                    assigned_type = %s,
+                    assigned_to = %s,
+                    current_step = %s,
+                    last_event = %s,
+                    status_updated_at = NOW()
+                WHERE id = %s
+            """, (
+                assigned_status,
+                assigned_type,
+                assigned_name,
+                f"Assigned to {assigned_name}",
+                "WORK_ORDER_ASSIGNED",
+                request_id
+            ))
+
+            conn.commit()
+
+            safe_log_work_order_activity(
+                request_id,
+                "WORK_ORDER_ASSIGNED",
+                f"Work order assigned to {assigned_name}.",
+                actor=assigned_name
+            )
+
+            send_sms(
+                tenant_phone,
+                f"North Star AI: {assigned_name} has been assigned to your maintenance request. "
+                f"Updates will continue to be sent to this number."
+            )
+
+            resp = MessagingResponse()
+            resp.message(
+                f"North Star AI: Work Order #{request_id} assigned to {assigned_name}."
+            )
+            return str(resp)
+
+        # Second technician/vendor signal: completed by technician/vendor.
+        if current_status in (f"ASSIGNED_{assigned_name.upper()}", "COMPLETION_PENDING_CONFIRMATION"):
+            technician_confirmed = True
+
+            if technician_confirmed and tenant_confirmed:
+                new_status = "WORK_ORDER_CLOSED"
+                current_step = "Work Order Closed"
+                last_event = "WORK_ORDER_CLOSED"
+            else:
+                new_status = "COMPLETION_PENDING_CONFIRMATION"
+                current_step = "Pending Tenant Confirmation"
+                last_event = "TECHNICIAN_COMPLETED"
+
+            cur.execute("""
+                UPDATE maintenance_requests_v2
+                SET status = %s,
+                    technician_confirmed = TRUE,
+                    current_step = %s,
+                    last_event = %s,
+                    status_updated_at = NOW(),
+                    closed_at = CASE WHEN %s = 'WORK_ORDER_CLOSED' THEN NOW() ELSE closed_at END
+                WHERE id = %s
+            """, (
+                new_status,
+                current_step,
+                last_event,
+                new_status,
+                request_id
+            ))
+
+            conn.commit()
+
+            safe_log_work_order_activity(
+                request_id,
+                last_event,
+                f"{assigned_name} marked work order as completed.",
+                actor=assigned_name
+            )
+
+            if new_status == "WORK_ORDER_CLOSED":
+                send_sms(
+                    tenant_phone,
+                    f"North Star AI: Work Order #{request_id} has been closed. Thank you for confirming completion."
+                )
+            else:
+                send_sms(
+                    tenant_phone,
+                    f"North Star AI: {assigned_name} has marked Work Order #{request_id} as completed. "
+                    f"If the work was completed satisfactorily, reply CLOSE {tenant_close_code}."
+                )
+
+            resp = MessagingResponse()
+            resp.message(
+                f"North Star AI: Completion signal received for Work Order #{request_id}. "
+                f"Status: {new_status}."
+            )
+            return str(resp)
+
+        resp = MessagingResponse()
+        resp.message(
+            f"North Star AI: Work Order #{request_id} is currently {current_status}."
+        )
+        return str(resp)
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+def handle_tenant_close_sms(from_number, message_body):
+    from_number = normalize_sms_phone(from_number)
+    body = (message_body or "").strip().upper()
+
+    if not body.startswith("CLOSE "):
+        return None
+
+    tenant_code = body.replace("CLOSE", "", 1).strip()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT
+                id,
+                status,
+                technician_confirmed,
+                tenant_confirmed
+            FROM maintenance_requests_v2
+            WHERE resident_phone = %s
+              AND tenant_close_code = %s
+              AND status IN (
+                    'ASSIGNED_DWAYNE',
+                    'ASSIGNED_BARBARA',
+                    'COMPLETION_PENDING_CONFIRMATION'
+              )
+            ORDER BY submitted_at DESC
+            LIMIT 1
+        """, (from_number, tenant_code))
+
+        row = cur.fetchone()
+
+        resp = MessagingResponse()
+
+        if not row:
+            resp.message(
+                "North Star AI: No matching open work order was found for that closeout code."
+            )
+            return str(resp)
+
+        request_id = row[0]
+        current_status = row[1]
+        technician_confirmed = row[2]
+        tenant_confirmed = True
+
+        if technician_confirmed and tenant_confirmed:
+            new_status = "WORK_ORDER_CLOSED"
+            current_step = "Work Order Closed"
+            last_event = "WORK_ORDER_CLOSED"
+        else:
+            new_status = "COMPLETION_PENDING_CONFIRMATION"
+            current_step = "Pending Technician Completion"
+            last_event = "TENANT_CONFIRMED"
+
+        cur.execute("""
+            UPDATE maintenance_requests_v2
+            SET status = %s,
+                tenant_confirmed = TRUE,
+                current_step = %s,
+                last_event = %s,
+                status_updated_at = NOW(),
+                closed_at = CASE WHEN %s = 'WORK_ORDER_CLOSED' THEN NOW() ELSE closed_at END
+            WHERE id = %s
+        """, (
+            new_status,
+            current_step,
+            last_event,
+            new_status,
+            request_id
+        ))
+
+        conn.commit()
+
+        safe_log_work_order_activity(
+            request_id,
+            last_event,
+            f"Tenant submitted closeout confirmation code.",
+            actor="tenant"
+        )
+
+        if new_status == "WORK_ORDER_CLOSED":
+            resp.message(
+                f"North Star AI: Thank you. Work Order #{request_id} has been closed."
+            )
+        else:
+            resp.message(
+                f"North Star AI: Thank you. Your confirmation has been received. "
+                f"The work order is pending technician completion confirmation."
+            )
+
+        return str(resp)
+
+    finally:
+        cur.close()
+        conn.close()
 
 def next_work_order_sequence() -> int:
     logs_dir = Path("NorthStar_Contact_Test/Logs")
