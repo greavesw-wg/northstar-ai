@@ -1284,11 +1284,30 @@ def maintenance_request():
 
         request_id = result[0]
 
+        tenant_close_code = generate_tenant_close_code()
+        dispatch_target = get_dispatch_target(assigned_type)
+
+        assigned_name = dispatch_target["name"]
+        technician_close_code = dispatch_target["close_code"]
+
         cur.execute("""
             UPDATE maintenance_requests_v2
-            SET community_access_code = %s
+            SET community_access_code = %s,
+                assigned_type = %s,
+                assigned_to = %s,
+                tenant_close_code = %s,
+                technician_close_code = %s,
+                technician_confirmed = FALSE,
+                tenant_confirmed = FALSE
             WHERE id = %s
-        """, (community_access_code, request_id))
+        """, (
+            community_access_code,
+            assigned_type,
+            assigned_name,
+            tenant_close_code,
+            technician_close_code,
+            request_id
+        ))
 
         conn.commit()
 
@@ -1307,7 +1326,7 @@ def maintenance_request():
             f"Work order opened and assigned to {assigned_type}.",
             "Work Order Created"
         )
-        tenant_close_code = generate_tenant_close_code()
+
         Thread(
             target=run_post_submission_tasks,
             args=(request_id, name, phone, building, unit, issue, assigned_type, property_name, tenant_close_code, routing_phone),
