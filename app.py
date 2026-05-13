@@ -825,6 +825,11 @@ def handle_tenant_close_sms(from_number, message_body):
     cur = conn.cursor()
 
     try:
+        digits_from_number = re.sub(r"\D", "", from_number)
+
+        if len(digits_from_number) == 11 and digits_from_number.startswith("1"):
+            digits_from_number = digits_from_number[1:]
+
         cur.execute("""
             SELECT
                 id,
@@ -832,7 +837,7 @@ def handle_tenant_close_sms(from_number, message_body):
                 technician_confirmed,
                 tenant_confirmed
             FROM maintenance_requests_v2
-            WHERE resident_phone = %s
+            WHERE RIGHT(REGEXP_REPLACE(resident_phone, '\\D', '', 'g'), 10) = %s
               AND tenant_close_code = %s
               AND status IN (
                     'ASSIGNED_DWAYNE',
@@ -841,7 +846,7 @@ def handle_tenant_close_sms(from_number, message_body):
               )
             ORDER BY submitted_at DESC
             LIMIT 1
-        """, (from_number, tenant_code))
+        """, (digits_from_number, tenant_code))
 
         row = cur.fetchone()
 
