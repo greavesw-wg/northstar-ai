@@ -64,8 +64,16 @@ DISPATCH_DIRECTORY = {
 def get_dispatch_target(assigned_type):
     return DISPATCH_DIRECTORY.get(assigned_type, DISPATCH_DIRECTORY["In-House"])
 
-
-def build_dispatch_message(ticket_id, tenant_name, property_name, building, unit, issue, tenant_phone):
+def build_dispatch_message(
+            ticket_id,
+            tenant_name,
+            property_name,
+            building,
+            unit,
+            issue,
+            tenant_phone,
+            technician_close_code=None
+    ):
     return (
         f"North Star AI Dispatch:\n"
         f"Work Order: {ticket_id}\n"
@@ -1087,6 +1095,8 @@ def run_post_submission_tasks(
 
             dispatch_target = get_dispatch_target(assigned_type)
 
+            technician_close_code = dispatch_target["close_code"]
+
             dispatch_message = build_dispatch_message(
                 ticket_id=request_id,
                 tenant_name=name,
@@ -1095,6 +1105,7 @@ def run_post_submission_tasks(
                 unit=unit,
                 issue=issue,
                 tenant_phone=phone,
+                technician_close_code=technician_close_code,
             )
 
             send_sms(dispatch_target["phone"], dispatch_message)
