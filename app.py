@@ -75,7 +75,7 @@ def build_dispatch_message(ticket_id, tenant_name, property_name, building, unit
         f"Building: {building}\n"
         f"Unit: {unit}\n"
         f"Issue: {issue}\n\n"
-        f"Reply with your closeout code when complete."
+        f"Reply with your code and Work Order number when accepting or completing this job. Example: {technician_close_code} {ticket_id}"
     )
 
 
@@ -213,23 +213,27 @@ def generate_ticket_number(ticket_id, submitted_at):
     return f"NS-{dt.strftime('%Y%m%d')}-{int(ticket_id):06d}"
 
 def format_status_badge(status_label, current_step=None):
-    display_status = current_step or status_label
-    step = str(display_status or "").lower().replace("_", " ")
+    raw_status = str(status_label or "").strip().upper()
 
-    if "tenant notified" in step:
-        cls = "status-tenant"
-    elif "vendor assigned" in step:
-        cls = "status-vendor"
-    elif "work order" in step:
-        cls = "status-workorder"
-    elif "complete" in step or "closed" in step:
-        cls = "status-complete"
-    elif "failed" in step:
-        cls = "status-failed"
-    elif "new" in step:
-        cls = "status-new"
+    if raw_status in ("WORK_ORDER_CREATED", "NEW"):
+        cls = "status-created"
+        display_status = raw_status
+
+    elif raw_status in ("ASSIGNED_DWAYNE", "ASSIGNED_BARBARA"):
+        cls = "status-assigned"
+        display_status = raw_status
+
+    elif raw_status == "COMPLETION_PENDING_CONFIRMATION":
+        cls = "status-pending-confirmation"
+        display_status = raw_status
+
+    elif raw_status == "WORK_ORDER_CLOSED":
+        cls = "status-closed"
+        display_status = raw_status
+
     else:
-        cls = "status-new"
+        cls = "status-unknown"
+        display_status = raw_status or str(current_step or "UNKNOWN").strip().upper()
 
     return f"<span class='status-badge {cls}'>{display_status}</span>"
 
@@ -623,8 +627,8 @@ def normalize_sms_phone(phone):
     return phone
 
 
-def find_dispatch_person_by_code(message_body):
-    incoming_code = (message_body or "").strip().upper()
+def find_dispatch_person_by_code(dispatch_code):
+    incoming_code = (dispatch_code or "").strip().upper()
 
     for assigned_type, person in DISPATCH_DIRECTORY.items():
         close_code = person.get("close_code", "").strip().upper()
@@ -640,9 +644,38 @@ def find_dispatch_person_by_code(message_body):
 
     return None
 
+def parse_dispatch_command(message_body):
+    """
+    Expected format:
+        DWAYNE1001 134
+        BARBARA2001 139
+
+    Returns:
+        (dispatch_code, ticket_suffix)
+
+    ticket_suffix is the last three digits of the work order / request id.
+    """
+    body = (message_body or "").strip().upper()
+    parts = body.split()
+
+    if len(parts) != 2:
+        return None, None
+
+    dispatch_code = parts[0].strip()
+    ticket_suffix = re.sub(r"\D", "", parts[1])
+
+    if not dispatch_code or not ticket_suffix:
+        return None, None
+
+    return dispatch_code, ticket_suffix
 
 def handle_dispatch_person_sms(from_number, message_body):
-    dispatch_person = find_dispatch_person_by_code(message_body)
+    dispatch_code, ticket_suffix = parse_dispatch_command(message_body)
+
+    if not dispatch_code or not ticket_suffix:
+        return None
+
+    dispatch_person = find_dispatch_person_by_code(dispatch_code)
 
     if not dispatch_person:
         return None
@@ -674,6 +707,7 @@ def handle_dispatch_person_sms(from_number, message_body):
                 tenant_confirmed
             FROM maintenance_requests_v2
             WHERE technician_close_code = %s
+              AND RIGHT(id::text, 3) = %s
               AND status IN (
                     'WORK_ORDER_CREATED',
                     'ASSIGNED_DWAYNE',
@@ -682,14 +716,14 @@ def handle_dispatch_person_sms(from_number, message_body):
               )
             ORDER BY submitted_at DESC
             LIMIT 1
-        """, (dispatch_person["close_code"],))
+        """, (dispatch_person["close_code"], ticket_suffix))
 
         row = cur.fetchone()
 
         if not row:
             resp = MessagingResponse()
             resp.message(
-                f"North Star AI: No active work order was found for {assigned_name}."
+                f"North Star AI: No active Work Order ending in #{ticket_suffix} was found for {assigned_name}."
             )
             return str(resp)
 
@@ -1839,36 +1873,50 @@ def dashboard():
         .ops-table td.status-cell {{
             min-width: 100px;
         }}
-        <style>
-        /* 🔴 NEW */
-        .status-new {{
+        .status-badge {
+            display: inline-block;
+            padding: 3px 7px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            white-space: nowrap;
+        }
+
+        /* 🔴 RED: Work order created, not yet accepted */
+        .status-created {
             background: #7f1d1d;
-            color: #fecaca;
-        }}
-        
-        /* 🟡 VENDOR ASSIGNED */
-        .status-vendor {{
-            background: #92400e;
-            color: #fef3c7;
-        }}
-        
-        /* 🔵 WORK ORDER */
-        .status-workorder {{
-            background: #1d4ed8;
-            color: #dbeafe;
-        }}
-        
-        /* 🟢 COMPLETE */
-        .status-complete {{
+            color: #ffffff;
+            border: 1px solid #ef4444;
+        }
+
+        /* 🟡 YELLOW: Technician/vendor assigned */
+        .status-assigned {
+            background: #854d0e;
+            color: #ffffff;
+            border: 1px solid #facc15;
+        }
+
+        /* 🟣 MAGENTA: AND gate has 1 and 0 */
+        .status-pending-confirmation {
+            background: #86198f;
+            color: #ffffff;
+            border: 1px solid #f0abfc;
+        }
+
+        /* 🟢 GREEN: AND gate has 1 and 1 */
+        .status-closed {
             background: #166534;
-            color: #dcfce7;
-        }}
-        
-        /* 🟢 TENANT NOTIFIED */
-        .status-tenant {{
-            background: #065f46;
-            color: #d1fae5;
-        }}
+            color: #ffffff;
+            border: 1px solid #22c55e;
+        }
+
+        /* Fallback */
+        .status-unknown {
+            background: #374151;
+            color: #ffffff;
+            border: 1px solid #6b7280;
+        }
         .enabled {{
             background: #052e16;
             color: #86efac;
