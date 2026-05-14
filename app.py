@@ -2362,8 +2362,8 @@ def get_property():
         "unit_count": unit_count,
         "land_area": f"{acreage} acres of land",
         "layouts": "One- and two-bedroom open-concept floor plans",
-        "stories": "Each building is 2 stories tall",
-        "website": "www.deercreeknj.com"
+        "stories": "Each building is 4 stories tall",
+        "website": ""
     })
 @app.route("/api/client/register", methods=["POST"])
 def client_register():
