@@ -491,11 +491,17 @@ def sms_handler():
     print(f"TO: [{to_number}]", flush=True)
     print(f"BODY: [{message}]", flush=True)
 
-    # STEP 0: Check whether this inbound SMS is a technician/vendor command.
+    # STEP 0A: Check whether this inbound SMS is a technician/vendor note update.
+    dispatch_note_response = handle_dispatch_note_sms(from_number, message)
+    if dispatch_note_response is not None:
+        print("DISPATCH NOTE RESPONSE RETURNED", flush=True)
+        return dispatch_note_response
+
+    # STEP 0B: Check whether this inbound SMS is a technician/vendor lifecycle command.
     dispatch_response = handle_dispatch_person_sms(from_number, message)
     if dispatch_response is not None:
-            print("DISPATCH RESPONSE RETURNED", flush=True)
-            return dispatch_response
+        print("DISPATCH RESPONSE RETURNED", flush=True)
+        return dispatch_response
 
     print("NO DISPATCH RESPONSE - CONTINUING TO TENANT CLOSE CHECK", flush=True)
 
@@ -676,6 +682,144 @@ def parse_dispatch_command(message_body):
         return None, None
 
     return dispatch_code, ticket_suffix
+
+def handle_dispatch_note_sms(from_number, message_body):
+    """
+    Allows technician/vendor to save resolution notes by SMS.
+
+    Expected format:
+        BARBARA2001 141 NOTE Replace rubber washer and spindle.
+        DWAYNE1001 142 NOTE Replaced faucet cartridge and tested for leaks.
+
+    This saves the note but does NOT change the lifecycle status.
+    """
+
+    body = (message_body or "").strip()
+
+    if not body:
+        return None
+
+    parts = body.split(maxsplit=3)
+
+    # Must have: CODE TICKET NOTE TEXT
+    if len(parts) < 4:
+        return None
+
+    incoming_code = parts[0].strip().upper()
+    ticket_part = parts[1].strip()
+    command = parts[2].strip().upper()
+    note_text = parts[3].strip()
+
+    if command != "NOTE":
+        return None
+
+    if not ticket_part.isdigit():
+        return None
+
+    if not note_text:
+        resp = MessagingResponse()
+        resp.message(
+            "North Star AI: Note was not saved. Please include note text after NOTE."
+        )
+        return str(resp)
+
+    dispatch_person = find_dispatch_person_by_code(incoming_code)
+
+    if not dispatch_person:
+        return None
+
+    request_id = int(ticket_part)
+    assigned_name = dispatch_person["name"]
+    assigned_type = dispatch_person["assigned_type"]
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # Confirm the work order exists and belongs to this technician/vendor assignment.
+        cur.execute("""
+            SELECT
+                id,
+                status,
+                assigned_to,
+                assigned_type
+            FROM maintenance_requests_v2
+            WHERE id = %s
+              AND assigned_type = %s
+            LIMIT 1
+        """, (request_id, assigned_type))
+
+        row = cur.fetchone()
+
+        resp = MessagingResponse()
+
+        if not row:
+            resp.message(
+                f"North Star AI: No matching work order #{request_id} was found for {assigned_name}."
+            )
+            return str(resp)
+
+        current_status = row[1]
+
+        # Save the note into the history/update table.
+        cur.execute("""
+            INSERT INTO work_order_updates (
+                ticket_id,
+                update_type,
+                work_notes,
+                status_before,
+                status_after,
+                updated_by
+            )
+            VALUES (
+                %s,
+                'sms_resolution_note',
+                %s,
+                %s,
+                %s,
+                %s
+            )
+        """, (
+            request_id,
+            note_text,
+            current_status,
+            current_status,
+            assigned_name
+        ))
+
+        # Preserve lifecycle status. Only update event metadata.
+        cur.execute("""
+            UPDATE maintenance_requests_v2
+            SET
+                last_event = CASE
+                    WHEN status = 'WORK_ORDER_CLOSED'
+                        THEN 'WORK_ORDER_NOTE_ADDED_AFTER_CLOSE'
+                    ELSE 'WORK_ORDER_NOTE_ADDED'
+                END,
+                status_updated_at = NOW()
+            WHERE id = %s
+        """, (request_id,))
+
+        conn.commit()
+
+        resp.message(
+            f"North Star AI: Note saved for Work Order #{request_id}."
+        )
+        return str(resp)
+
+    except Exception as e:
+        conn.rollback()
+        print(f"[DISPATCH NOTE ERROR] {e}", flush=True)
+
+        resp = MessagingResponse()
+        resp.message(
+            "North Star AI: The note could not be saved. Please try again."
+        )
+        return str(resp)
+
+    finally:
+        cur.close()
+        conn.close()
 
 def handle_dispatch_person_sms(from_number, message_body):
     dispatch_code, ticket_suffix = parse_dispatch_command(message_body)
