@@ -2187,11 +2187,31 @@ def update_work_order():
     ticket_id = data.get("ticket_id")
     notes = data.get("notes", "").strip()
 
+    if not ticket_id:
+        return jsonify({"error": "ticket_id is required"}), 400
+
+    if not notes:
+        return jsonify({"error": "notes are required"}), 400
+
     conn = get_db_connection()
     cur = conn.cursor()
 
     try:
-        # 1. Log the update (history table)
+        # 1. Get the current lifecycle status first.
+        cur.execute("""
+            SELECT status
+            FROM maintenance_requests_v2
+            WHERE id = %s
+        """, (ticket_id,))
+
+        row = cur.fetchone()
+
+        if not row:
+            return jsonify({"error": "Work order not found"}), 404
+
+        current_status = row[0]
+
+        # 2. Log the update without changing lifecycle status.
         cur.execute("""
             INSERT INTO work_order_updates (
                 ticket_id,
@@ -2201,27 +2221,41 @@ def update_work_order():
                 status_after,
                 updated_by
             )
-            SELECT
-                id,
-                'update',
+            VALUES (
                 %s,
-                status,
-                'completed_pending_tenant',
+                'resolution_note',
+                %s,
+                %s,
+                %s,
                 'system'
-            FROM maintenance_requests_v2
-            WHERE id = %s
-        """, (notes, ticket_id))
+            )
+        """, (
+            ticket_id,
+            notes,
+            current_status,
+            current_status
+        ))
 
-        # 2. Update main ticket status
+        # 3. Do NOT overwrite status.
+        #    Save update metadata only.
         cur.execute("""
             UPDATE maintenance_requests_v2
-            SET status = 'completed_pending_tenant'
+            SET
+                last_event = CASE
+                    WHEN status = 'WORK_ORDER_CLOSED'
+                        THEN 'WORK_ORDER_UPDATED_AFTER_CLOSE'
+                    ELSE 'WORK_ORDER_UPDATED'
+                END,
+                status_updated_at = NOW()
             WHERE id = %s
         """, (ticket_id,))
 
         conn.commit()
 
-        return jsonify({"success": True})
+        return jsonify({
+            "success": True,
+            "status_preserved": current_status
+        })
 
     except Exception as e:
         conn.rollback()
@@ -2230,7 +2264,6 @@ def update_work_order():
     finally:
         cur.close()
         conn.close()
-
 @app.route("/delete-ticket/<int:ticket_id>", methods=["POST"])
 @requires_auth
 def delete_ticket(ticket_id):
