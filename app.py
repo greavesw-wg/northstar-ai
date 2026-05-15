@@ -2145,10 +2145,18 @@ def api_client_work_orders():
             mr.issue_description,
             mr.status,
             mr.submitted_at,
-            COALESCE(mr.assigned_type, 'In-House') AS assigned_type
+            COALESCE(mr.assigned_type, 'In-House') AS assigned_type,
+            COALESCE(latest_update.work_notes, '') AS work_notes
         FROM maintenance_requests_v2 mr
         LEFT JOIN properties p
             ON mr.property_id = p.id
+        LEFT JOIN LATERAL (
+            SELECT work_notes
+            FROM work_order_updates wou
+            WHERE wou.ticket_id = mr.id
+            ORDER BY wou.id DESC
+            LIMIT 1
+        ) latest_update ON TRUE
         WHERE COALESCE(mr.dashboard_status, 'visible') = 'visible'
           AND COALESCE(mr.status, 'new') NOT IN ('Closed', 'closed')
         ORDER BY mr.submitted_at DESC
@@ -2172,7 +2180,8 @@ def api_client_work_orders():
             "issue": row[6],
             "status": row[7],
             "submitted_at": submitted_at.strftime("%B %d, %Y, %I:%M %p").replace(" 0", " "),
-            "assigned_type": row[9]
+            "assigned_type": row[9],
+            "work_notes": row[10] or ""
         })
 
     cur.close()
