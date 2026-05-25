@@ -1770,6 +1770,333 @@ def update_client_property(record_id):
         "record": record
     }), 200
 
+@app.route("/api/client/inventory", methods=["GET"])
+def get_client_inventory():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+
+    if not token:
+        return jsonify({"error": "Missing authorization token"}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # For current single-property build, pull all inventory records.
+        # Later we will filter by authenticated client_id/property_id.
+        cur.execute("""
+            SELECT
+                id,
+                client_id,
+                property_id,
+                item_id,
+                item_name,
+                category,
+                storage_location,
+                supplier,
+                current_stock,
+                reorder_level,
+                cost_per_item,
+                notes,
+                created_at,
+                updated_at
+            FROM inventory_items
+            ORDER BY item_name ASC;
+        """)
+
+        rows = cur.fetchall()
+
+        items = []
+        for row in rows:
+            items.append({
+                "id": row[0],
+                "client_id": row[1],
+                "property_id": row[2],
+                "item_id": row[3],
+                "item_name": row[4],
+                "category": row[5],
+                "storage_location": row[6],
+                "supplier": row[7],
+                "current_stock": row[8],
+                "reorder_level": row[9],
+                "cost_per_item": float(row[10] or 0),
+                "notes": row[11],
+                "created_at": str(row[12]) if row[12] else "",
+                "updated_at": str(row[13]) if row[13] else ""
+            })
+
+        return jsonify({"items": items}), 200
+
+    except Exception as e:
+        print("Inventory load error:", e)
+        return jsonify({"error": "Unable to load inventory"}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/api/client/inventory", methods=["POST"])
+def create_inventory_item():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+
+    if not token:
+        return jsonify({"error": "Missing authorization token"}), 401
+
+    data = request.get_json() or {}
+
+    item_id = data.get("item_id", "").strip()
+    item_name = data.get("item_name", "").strip()
+    category = data.get("category", "").strip()
+    storage_location = data.get("storage_location", "").strip()
+    supplier = data.get("supplier", "").strip()
+    current_stock = int(data.get("current_stock") or 0)
+    reorder_level = int(data.get("reorder_level") or 0)
+    cost_per_item = float(data.get("cost_per_item") or 0)
+    notes = data.get("notes", "").strip()
+
+    if not item_id or not item_name:
+        return jsonify({"error": "Item ID and Item Name are required"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            INSERT INTO inventory_items (
+                client_id,
+                property_id,
+                item_id,
+                item_name,
+                category,
+                storage_location,
+                supplier,
+                current_stock,
+                reorder_level,
+                cost_per_item,
+                notes,
+                updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            RETURNING id;
+        """, (
+            1,
+            1,
+            item_id,
+            item_name,
+            category,
+            storage_location,
+            supplier,
+            current_stock,
+            reorder_level,
+            cost_per_item,
+            notes
+        ))
+
+        new_id = cur.fetchone()[0]
+
+        cur.execute("""
+            INSERT INTO inventory_transactions (
+                inventory_item_db_id,
+                client_id,
+                property_id,
+                item_id,
+                transaction_type,
+                quantity,
+                previous_stock,
+                new_stock,
+                cost_per_item,
+                total_value,
+                performed_by,
+                notes
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """, (
+            new_id,
+            1,
+            1,
+            item_id,
+            "ADD_ITEM",
+            current_stock,
+            0,
+            current_stock,
+            cost_per_item,
+            current_stock * cost_per_item,
+            "Client User",
+            notes
+        ))
+
+        conn.commit()
+
+        return jsonify({
+            "message": "Inventory item created",
+            "id": new_id
+        }), 201
+
+    except Exception as e:
+        conn.rollback()
+        print("Inventory create error:", e)
+        return jsonify({"error": "Unable to create inventory item"}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/api/client/inventory/<int:item_db_id>", methods=["PATCH"])
+def update_inventory_item(item_db_id):
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+
+    if not token:
+        return jsonify({"error": "Missing authorization token"}), 401
+
+    data = request.get_json() or {}
+    action = data.get("action", "UPDATE_ITEM").strip().upper()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT
+                id,
+                item_id,
+                current_stock,
+                cost_per_item
+            FROM inventory_items
+            WHERE id = %s;
+        """, (item_db_id,))
+
+        existing = cur.fetchone()
+
+        if not existing:
+            return jsonify({"error": "Inventory item not found"}), 404
+
+        db_id = existing[0]
+        item_id = existing[1]
+        previous_stock = int(existing[2] or 0)
+        existing_cost = float(existing[3] or 0)
+
+        quantity = int(data.get("quantity") or 0)
+
+        if action == "ITEM_IN":
+            new_stock = previous_stock + quantity
+
+        elif action == "ITEM_OUT":
+            if quantity > previous_stock:
+                return jsonify({"error": "Quantity out cannot exceed current stock"}), 400
+            new_stock = previous_stock - quantity
+
+        else:
+            new_stock = int(data.get("current_stock") or previous_stock)
+
+        item_name = data.get("item_name")
+        category = data.get("category")
+        storage_location = data.get("storage_location")
+        supplier = data.get("supplier")
+        reorder_level = data.get("reorder_level")
+        cost_per_item = float(data.get("cost_per_item") or existing_cost)
+        notes = data.get("notes", "")
+
+        cur.execute("""
+            UPDATE inventory_items
+            SET
+                item_name = COALESCE(%s, item_name),
+                category = COALESCE(%s, category),
+                storage_location = COALESCE(%s, storage_location),
+                supplier = COALESCE(%s, supplier),
+                current_stock = %s,
+                reorder_level = COALESCE(%s, reorder_level),
+                cost_per_item = %s,
+                notes = COALESCE(%s, notes),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s;
+        """, (
+            item_name,
+            category,
+            storage_location,
+            supplier,
+            new_stock,
+            reorder_level,
+            cost_per_item,
+            notes,
+            item_db_id
+        ))
+
+        cur.execute("""
+            INSERT INTO inventory_transactions (
+                inventory_item_db_id,
+                client_id,
+                property_id,
+                item_id,
+                transaction_type,
+                quantity,
+                previous_stock,
+                new_stock,
+                cost_per_item,
+                total_value,
+                performed_by,
+                notes
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """, (
+            db_id,
+            1,
+            1,
+            item_id,
+            action,
+            quantity,
+            previous_stock,
+            new_stock,
+            cost_per_item,
+            quantity * cost_per_item,
+            "Client User",
+            notes
+        ))
+
+        conn.commit()
+
+        return jsonify({
+            "message": "Inventory item updated",
+            "previous_stock": previous_stock,
+            "new_stock": new_stock
+        }), 200
+
+    except Exception as e:
+        conn.rollback()
+        print("Inventory update error:", e)
+        return jsonify({"error": "Unable to update inventory item"}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/api/client/inventory/<int:item_db_id>", methods=["DELETE"])
+def delete_inventory_item(item_db_id):
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+
+    if not token:
+        return jsonify({"error": "Missing authorization token"}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            DELETE FROM inventory_items
+            WHERE id = %s;
+        """, (item_db_id,))
+
+        conn.commit()
+
+        return jsonify({"message": "Inventory item deleted"}), 200
+
+    except Exception as e:
+        conn.rollback()
+        print("Inventory delete error:", e)
+        return jsonify({"error": "Unable to delete inventory item"}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
 @app.route("/dashboard")
 @requires_auth
 def dashboard():
