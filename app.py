@@ -2141,6 +2141,71 @@ def delete_inventory_item(item_db_id):
         cur.close()
         conn.close()
 
+@app.route("/api/client/inventory/transactions", methods=["GET"])
+def get_inventory_transactions():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+
+    if not token:
+        return jsonify({"error": "Missing authorization token"}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT
+                id,
+                item_id,
+                transaction_type,
+                quantity,
+                previous_stock,
+                new_stock,
+                cost_per_item,
+                total_value,
+                performed_by,
+                performed_by_user_id,
+                performed_by_name,
+                performed_by_role,
+                performed_by_department,
+                notes,
+                created_at
+            FROM inventory_transactions
+            ORDER BY id DESC
+            LIMIT 50;
+        """)
+
+        rows = cur.fetchall()
+
+        transactions = []
+        for row in rows:
+            transactions.append({
+                "id": row[0],
+                "item_id": row[1],
+                "transaction_type": row[2],
+                "quantity": row[3],
+                "previous_stock": row[4],
+                "new_stock": row[5],
+                "cost_per_item": float(row[6] or 0),
+                "total_value": float(row[7] or 0),
+                "performed_by": row[8],
+                "performed_by_user_id": row[9],
+                "performed_by_name": row[10],
+                "performed_by_role": row[11],
+                "performed_by_department": row[12],
+                "notes": row[13],
+                "created_at": str(row[14]) if row[14] else ""
+            })
+
+        return jsonify({"transactions": transactions}), 200
+
+    except Exception as e:
+        print("Inventory transactions load error:", e)
+        return jsonify({"error": "Unable to load inventory transactions"}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
 @app.route("/dashboard")
 @requires_auth
 def dashboard():
