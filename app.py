@@ -1770,6 +1770,28 @@ def update_client_property(record_id):
         "record": record
     }), 200
 
+def get_client_user_from_token():
+    auth_header = request.headers.get("Authorization", "")
+
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header.replace("Bearer ", "").strip()
+
+    try:
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+
+        return {
+            "user_id": decoded.get("user_id") or decoded.get("client_id"),
+            "username": decoded.get("username", ""),
+            "name": decoded.get("client_name", "Client User"),
+            "role": decoded.get("role", "Client User"),
+            "department": "Maintenance"
+        }
+
+    except Exception as e:
+        print("Token decode error:", e)
+        return None
 @app.route("/api/client/inventory", methods=["GET"])
 def get_client_inventory():
     token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
@@ -1892,7 +1914,10 @@ def create_inventory_item():
         ))
 
         new_id = cur.fetchone()[0]
+        actor = get_client_user_from_token()
 
+        if not actor:
+            return jsonify({"error": "Invalid or missing user identity"}), 401
         cur.execute("""
             INSERT INTO inventory_transactions (
                 inventory_item_db_id,
@@ -1906,9 +1931,13 @@ def create_inventory_item():
                 cost_per_item,
                 total_value,
                 performed_by,
+                performed_by_user_id,
+                performed_by_name,
+                performed_by_role,
+                performed_by_department,
                 notes
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             new_id,
             1,
@@ -1920,7 +1949,11 @@ def create_inventory_item():
             current_stock,
             cost_per_item,
             current_stock * cost_per_item,
-            "Client User",
+            actor["name"],
+            actor["user_id"],
+            actor["name"],
+            actor["role"],
+            actor["department"],
             notes
         ))
 
@@ -2019,7 +2052,10 @@ def update_inventory_item(item_db_id):
             notes,
             item_db_id
         ))
+        actor = get_client_user_from_token()
 
+        if not actor:
+            return jsonify({"error": "Invalid or missing user identity"}), 401
         cur.execute("""
             INSERT INTO inventory_transactions (
                 inventory_item_db_id,
@@ -2033,9 +2069,13 @@ def update_inventory_item(item_db_id):
                 cost_per_item,
                 total_value,
                 performed_by,
+                performed_by_user_id,
+                performed_by_name,
+                performed_by_role,
+                performed_by_department,
                 notes
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             db_id,
             1,
@@ -2047,7 +2087,11 @@ def update_inventory_item(item_db_id):
             new_stock,
             cost_per_item,
             quantity * cost_per_item,
-            "Client User",
+            actor["name"],
+            actor["user_id"],
+            actor["name"],
+            actor["role"],
+            actor["department"],
             notes
         ))
 
@@ -2816,7 +2860,11 @@ def client_login():
     token = jwt.encode(
         {
             "client_id": user_id,
-            "community_access_code": community_access_code
+            "user_id": user_id,
+            "username": db_username,
+            "client_name": client_name,
+            "community_access_code": community_access_code,
+            "role": role
         },
         SECRET_KEY,
         algorithm="HS256"
